@@ -8,8 +8,8 @@
 - [x] Set up version control
 
 ## Data Acquisition and Preparation
-- [ ] Download BiomedParse dataset from Hugging Face
-- [ ] Download BiomedParse model from Hugging Face
+- [x] Download BiomedParse dataset from Hugging Face
+- [x] Download BiomedParse model from Hugging Face (located in `pretrained` folder)
 - [ ] Create data loaders for the dataset
 - [ ] Split data into training, validation, and test sets (if not already done)
 - [ ] Verify data loading and preprocessing pipeline
@@ -30,7 +30,7 @@
 ## Distillation Implementation
 - [ ] Implement KL divergence distillation loss
 - [ ] Implement supervised loss calculation
-- [ ] Create combined loss function with weighting parameter α
+- [ ] Create combined loss function with weighting parameter
 - [ ] Implement temperature scaling for softening probability distributions
 - [ ] Set up optimization strategy (learning rate, scheduler, etc.)
 
