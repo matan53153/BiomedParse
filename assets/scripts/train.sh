@@ -4,10 +4,11 @@ export DATASET2=biomedparse_datasets/
 export VLDATASET=biomedparse_datasets/
 export PATH=$PATH:biomedparse_datasets/coco_caption/jre1.8.0_321/bin/
 export PYTHONPATH=$PYTHONPATH:biomedparse_datasets/coco_caption/
-export OMPI_ALLOW_RUN_AS_ROOT=1
-export OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1
+export OMPI_ALLOW_RUN_AS_ROOT=1 # Might be needed by mpirun
+export OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 # Might be needed by mpirun
 #export WANDB_KEY=YOUR_WANDB_KEY # Provide your wandb key here
-CUDA_VISIBLE_DEVICES=0 mpirun -n 1 python entry.py train \
+
+CUDA_VISIBLE_DEVICES=0,1,2,3 mpirun -n 4 --oversubscribe -x NLTK_DATA python entry.py train \
             --conf_files configs/biomed_seg_lang_v1.yaml \
             --overrides \
             FP16 True \
@@ -17,7 +18,6 @@ CUDA_VISIBLE_DEVICES=0 mpirun -n 1 python entry.py train \
             MODEL.ENCODER.CONVS_DIM 512 \
             MODEL.ENCODER.MASK_DIM 512 \
             TEST.BATCH_SIZE_TOTAL 4 \
-            TRAIN.BATCH_SIZE_TOTAL 4 \
             TRAIN.BATCH_SIZE_PER_GPU 4 \
             SOLVER.MAX_NUM_EPOCHS 20 \
             SOLVER.BASE_LR 0.00001 \
@@ -36,6 +36,15 @@ CUDA_VISIBLE_DEVICES=0 mpirun -n 1 python entry.py train \
             ATTENTION_ARCH.SPATIAL_MEMORIES 32 \
             MODEL.DECODER.SPATIAL.MAX_ITER 0 \
             ATTENTION_ARCH.QUERY_NUMBER 3 \
-            STROKE_SAMPLER.MAX_CANDIDATE 10 \
-            WEIGHT True \
-            RESUME_FROM pretrained/biomedparse_v1.pt
+            STROKE_SAMPLER.MAX_CANDIDATE 10
+
+# The python command is now run directly from the Slurm script using srun
+# mpirun/CUDA_VISIBLE_DEVICES are handled by Slurm's --ntasks/--gpus-per-task
+
+# Example for interactive/non-Slurm run (single GPU):
+# python entry.py train \
+#             --conf_files configs/biomed_seg_lang_v1.yaml \
+#             --overrides \
+#             FP16 True \
+#             RANDOM_SEED 2024 \
+#             ...

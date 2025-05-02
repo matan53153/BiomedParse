@@ -120,3 +120,9 @@ output
 #biomedparse_eval_results.json
 
 .amlignore*
+
+
+biomedparse_datasets/*
+clip-vit-base-patch32-tokenizer/*
+pretrained_assets/*
+pretrained

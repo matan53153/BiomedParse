@@ -17,8 +17,18 @@ from detectron2.utils.file_io import PathManager
 _PREDEFINED_SPLITS_BIOMED = {}
 
 # example of registering a dataset
-datasets = ['BiomedParseData-Demo', ]   # provide name of the dataset under biomedparse_datasets
-splits = ['demo']    # provide split name, e.g., train, test, val. Here there is only one 'demo' split in the example demo dataset
+datasets = [
+    'Task09_Spleen', 'Task08_HepaticVessel', 'Task07_Pancreas', 'Task06_Lung',
+    'Task05_Prostate', 'Task04_Hippocampus', 'Task03_Liver', 'Task02_Heart',
+    'Task01_BrainTumour', 'UWaterlooSkinCancer', 'kits23', 'Radiography_Viral_Pneumonia',
+    'Radiography_Normal', 'Radiography_Lung_Opacity', 'Radiography_COVID',
+    'siim-acr-pneumothorax', 'REFUGE', 'QaTa-COV19', 'PolypGen', 'PanNuke',
+    'OCT-CME', 'NeoPolyp', 'MMs', 'LiverUS', 'LIDC-IDRI', 'LGG', 'GlaS', 'G1020',
+    'FH-PS-AOP', 'DRIVE', 'CXR_Masks_and_Labels', 'ISIC', 'COVID-QU-Ex',
+    'COVID-19_CT', 'CDD-CESM', 'amos_22_MRI', 'amos_22_CT', 'CAMUS', 'BreastUS',
+    'ACDC'
+]   # provide name of the dataset under biomedparse_datasets
+splits = ['train', 'test']    # provide split name, e.g., train, test, val. Update this if your splits are different.
 
 # Here we register all the splits of the dataset
 for name in datasets:

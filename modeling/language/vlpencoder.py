@@ -43,7 +43,7 @@ class LanguageEncoder(nn.Module):
         for key, value in queue_operator.items():
             self.register_buffer(key, value)
             
-        self.biomed_encoder = AutoModel.from_pretrained("microsoft/BiomedNLP-BiomedBERT-base-uncased-abstract-fulltext")
+        self.biomed_encoder = AutoModel.from_pretrained("/scratch/gpfs/km4074/BiomedParse/pretrained_assets/microsoft__BiomedNLP-BiomedBERT-base-uncased-abstract-fulltext")
 
     @classmethod
     def from_config(cls, cfg):
