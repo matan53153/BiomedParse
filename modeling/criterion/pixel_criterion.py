@@ -50,7 +50,7 @@ class PixelCriterion(nn.Module):
             
         # Handle spatial mismatch between logits and masks (e.g., due to different strides)
         if logits.shape[-2:] != gt_masks.shape[-2:]:
-             logger.warning(f"Spatial shape mismatch! Logits: {logits.shape}, Masks: {gt_masks.shape}. Attempting target resize.")
+            logger.warning(f"Spatial shape mismatch! Logits: {logits.shape}, Masks: {gt_masks.shape}. Attempting target resize.")
             # Reshape gt_masks to match logits spatial dimensions. Input NCHW expected.
             gt_masks = F.interpolate(gt_masks.float(), size=logits.shape[2:], mode='nearest').long()
 

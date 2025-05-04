@@ -83,7 +83,7 @@ class StudentResNetSegmentation(nn.Module):
         super().__init__()
         self.backbone = backbone
         self.head = head
-        self.num_classes = num_classes # Store num_classes
+        self.num_classes = num_classes
 
     @classmethod
     def from_config(cls, cfg):
@@ -102,54 +102,28 @@ class StudentResNetSegmentation(nn.Module):
             "num_classes": num_classes,
         }
 
-    def forward(self, batched_inputs, mode='default'):
-        # Assuming batched_inputs is similar structure, containing 'image'
-        # Get image tensor
-        if isinstance(batched_inputs, list):
-            # Get device from a reliable parameter within the head
-            device = next(self.head.parameters()).device
-            images = [x["image"].to(device) for x in batched_inputs]
-            # TODO: Add normalization based on student config/ImageNet defaults
-            # images = [(x - self.pixel_mean) / self.pixel_std for x in images]
-            # TODO: Handle ImageList creation/padding if needed by backbone/head
-            # images = ImageList.from_tensors(images, size_divisibility=32) # Example size divisibility
-            input_tensor = torch.stack(images, dim=0) # Simple stacking for now
-            input_tensor = input_tensor.float() # Convert to float
-        elif isinstance(batched_inputs, torch.Tensor):
-            # Get device from a reliable parameter within the head
-            device = next(self.head.parameters()).device
-            input_tensor = batched_inputs.to(device)
-            input_tensor = input_tensor.float() # Convert to float
-        else:
-            raise TypeError(f"Unsupported input type: {type(batched_inputs)}")
-
+    def forward(self, input_tensor):
+        # The input_tensor is already on the correct device and is float
         input_shape = input_tensor.shape[-2:]
 
-        # Forward through backbone
-        features = self.backbone(input_tensor) # Returns final feature map
 
-        # Forward through head
-        # DeepLabHead expects a dictionary {'out': features} <- This seems incorrect for torchvision's head
-        # Pass the features tensor directly
-        head_output = self.head(features)
+        # Forward through ResNet backbone features
+        features = self.backbone(input_tensor) # Backbone returns feature dict {'out': tensor, 'aux': tensor}
 
-        # Upsample logits to input size
-        head_output = F.interpolate(head_output, size=input_shape, mode="bilinear", align_corners=False)
+        # Forward through DeepLabV3 head
+        # Pass the tensor from the 'out' key directly to the head
+        logits = self.head(features['out']) # head expects Tensor, not dict
 
-        # Return in a dictionary format, using a key like 'sem_seg_logits'
-        # to distinguish from potential query-based 'pred_logits'
-        results = {"sem_seg_logits": head_output}
+        # Upsample logits to original input size
+        logits = F.interpolate(
+            logits,
+            size=input_shape,
+            mode="bilinear",
+            align_corners=False
+        )
 
-        # During training, return dictionary for criterion
-        if self.training:
-            return {"pred_logits": head_output} # Use standard key
-        else:
-            # During evaluation, always return the raw logits tensor
-            # Log a warning if the mode isn't one explicitly handled by SemSegEvaluator, but return tensor anyway.
-            if mode not in ['sem_seg', 'default_eval']:
-                 logger = logging.getLogger(__name__)
-                 logger.warning(f"StudentResNet50 model received unexpected evaluation mode: '{mode}'. Returning logits tensor directly.")
-            return head_output
+        # Ensure output is a dict with 'sem_seg_logits' key
+        return {"sem_seg_logits": logits}
 
 
 @register_model

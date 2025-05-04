@@ -123,6 +123,10 @@ MODEL:
       ENABLED: False
       PHRASE_PROB: 0.5
       SIM_THRES: 0.95
+    VISUAL:
+      ENABLED: False
+    AUDIO:
+      ENABLED: False
     DEEP_SUPERVISION: True
     NO_OBJECT_WEIGHT: 0.1
     GCLASS_WEIGHT: 0.4
@@ -267,6 +271,7 @@ DATASETS:
 #     'biomed_ACDC_test'
 
   TEST:  [
+    'biomed_Task06_Lung_test',       # CT
     # 'biomed_Task01_BrainTumour_train',
     # 'biomed_Task02_Heart_train',
     # 'biomed_Task03_Liver_train',
@@ -276,37 +281,37 @@ DATASETS:
     # 'biomed_Task07_Pancreas_train',
     # 'biomed_Task08_HepaticVessel_train',
     # 'biomed_Task09_Spleen_train',
-    'biomed_UWaterlooSkinCancer_train',
-    'biomed_kits23_train',
-    'biomed_Radiography_Viral_Pneumonia_train',
-    'biomed_Radiography_Normal_train',
-    'biomed_Radiography_Lung_Opacity_train',
-    'biomed_Radiography_COVID_train',
-    'biomed_siim-acr-pneumothorax_train',
-    'biomed_REFUGE_train',
-    'biomed_QaTa-COV19_train',
-    'biomed_PolypGen_train',
-    'biomed_PanNuke_train',
-    'biomed_OCT-CME_train',
-    'biomed_NeoPolyp_train',
-    'biomed_MMs_train',
-    'biomed_LiverUS_train',
-    'biomed_LIDC-IDRI_train',
-    'biomed_LGG_train',
-    'biomed_GlaS_train',
-    'biomed_G1020_train',
-    'biomed_FH-PS-AOP_train',
-    'biomed_DRIVE_train',
-    'biomed_CXR_Masks_and_Labels_train',
-    'biomed_ISIC_train',
-    'biomed_COVID-QU-Ex_train',
-    'biomed_COVID-19_CT_train',
-    'biomed_CDD-CESM_train',
-    'biomed_amos_22_MRI_train',
-    'biomed_amos_22_CT_train',
-    'biomed_CAMUS_train',
-    'biomed_BreastUS_train',
-    'biomed_ACDC_train'
+    # 'biomed_UWaterlooSkinCancer_train',
+    # 'biomed_kits23_train',
+    # 'biomed_Radiography_Viral_Pneumonia_train',
+    # 'biomed_Radiography_Normal_train',
+    # 'biomed_Radiography_Lung_Opacity_train',
+    # 'biomed_Radiography_COVID_train',
+    # 'biomed_siim-acr-pneumothorax_train',
+    # 'biomed_REFUGE_train',
+    # 'biomed_QaTa-COV19_train',
+    # 'biomed_PolypGen_train',
+    # 'biomed_PanNuke_train',
+    # 'biomed_OCT-CME_train',
+    # 'biomed_NeoPolyp_train',
+    # 'biomed_MMs_train',
+    # 'biomed_LiverUS_train',
+    # 'biomed_LIDC-IDRI_train',
+    # 'biomed_LGG_train',
+    # 'biomed_GlaS_train',
+    # 'biomed_G1020_train',
+    # 'biomed_FH-PS-AOP_train',
+    # 'biomed_DRIVE_train',
+    # 'biomed_CXR_Masks_and_Labels_train',
+    # 'biomed_ISIC_train',
+    # 'biomed_COVID-QU-Ex_train',
+    # 'biomed_COVID-19_CT_train',
+    # 'biomed_CDD-CESM_train',
+    # 'biomed_amos_22_MRI_train',
+    # 'biomed_amos_22_CT_train',
+    # 'biomed_CAMUS_train',
+    # 'biomed_BreastUS_train',
+    # 'biomed_ACDC_train'
   ]
   
   CLASS_CONCAT: false

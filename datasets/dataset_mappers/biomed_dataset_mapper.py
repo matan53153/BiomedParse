@@ -226,7 +226,7 @@ class BioMedDatasetMapper:
         # but not efficient on large generic data structures due to the use of pickle & mp.Queue.
         # Therefore it's important to use torch.Tensor.
         dataset_dict["image"] = torch.as_tensor(np.ascontiguousarray(image.transpose(2, 0, 1)))
-
+        dataset_dict["image"] = dataset_dict["image"].float().div(255.0)
 
         grounding_anno = dataset_dict['grounding_info']
         if len(grounding_anno) == 0:

@@ -35,7 +35,8 @@ class MobileNetBackbone(nn.Module):
     def forward(self, x):
         # Forward through the feature extractor part
         x = self.features(x)
-        return x
+        # Return features in a dictionary with the key 'out'
+        return {'out': x}
 
 
 class StudentMobileNetSegmentation(nn.Module):
@@ -72,11 +73,24 @@ class StudentMobileNetSegmentation(nn.Module):
         input_shape = input_tensor.shape[-2:]
 
         # Forward through MobileNet backbone features
-        features = self.backbone(input_tensor) # Backbone directly returns feature dict
+        features = self.backbone(input_tensor) # Backbone might return feature dict or tensor
+
+        # Check if backbone output is a dict and has 'out', otherwise assume it's the tensor itself
+        if isinstance(features, dict):
+            if 'out' not in features:
+                raise KeyError(f"Backbone output dict missing expected key 'out'. Keys found: {list(features.keys())}")
+            if not isinstance(features['out'], torch.Tensor):
+                 raise TypeError(f"Expected backbone feature 'out' to be a Tensor, but got {type(features['out'])}")
+            head_input = features['out']
+        elif isinstance(features, torch.Tensor):
+            head_input = features
+        else:
+            # Add handling for other unexpected types if necessary
+            raise TypeError(f"Unexpected backbone output type: {type(features)}")
 
         # Forward through DeepLabV3 head
-        # Pass the tensor from the 'out' key directly to the head
-        logits = self.head(features['out']) # head expects Tensor, not dict
+        # Pass the appropriate tensor to the head
+        logits = self.head(head_input) # Use the extracted or direct tensor
 
         # Upsample logits to original input size
         logits = F.interpolate(

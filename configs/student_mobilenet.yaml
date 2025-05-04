@@ -15,8 +15,8 @@ base_path: "./"
 # Resume Logistic
 RESUME: false
 WEIGHT: false
-RESUME_FROM: 'output/student_mobilenet.yaml_conf~/run_2/00001398'
-EVAL_AT_START: True
+RESUME_FROM: ''
+EVAL_AT_START: False
 SAVE_CHECKPOINT: True
 
 # Logging and Debug

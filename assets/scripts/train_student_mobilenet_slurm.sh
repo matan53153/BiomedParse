@@ -46,7 +46,7 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 mpirun -n 4 --oversubscribe -x NLTK_DATA python ent
             --overrides \
             RANDOM_SEED 2024 \
             BioMed.INPUT.IMAGE_SIZE 1024 \
-            TRAIN.BATCH_SIZE_PER_GPU 32 \
+            TRAIN.BATCH_SIZE_PER_GPU 56 \
             SOLVER.MAX_NUM_EPOCHS 20 # Or adjust as needed for student
             # FP16 True # This should be handled by the YAML file now
             # Add/remove other relevant overrides from original train.sh if needed

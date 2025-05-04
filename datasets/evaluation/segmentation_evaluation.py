@@ -139,17 +139,63 @@ class SemSegEvaluator(DatasetEvaluator):
             if gt_file_path is None:
                 self._logger.warning(f"Could not find ground truth file for input: {input['file_name']}. Skipping sample.")
                 continue
-                
+
+            # <<< --- Start Modification --- >>>
+            gt_loaded_successfully = False
+            gt_original = None
             try:
                 with PathManager.open(gt_file_path, "rb") as f:
-                    gt = load_semseg(f, self._semseg_loader) - self._class_offset
+                    # Load GT as numpy array first for inspection
+                    gt_original = np.array(Image.open(f), dtype=np.uint8) # Load as uint8 for inspection
+                    gt_loaded_successfully = True
             except FileNotFoundError:
                 self._logger.warning(f"Ground truth file not found: {gt_file_path}. Skipping sample associated with {input['file_name']}.")
                 continue
             except Exception as e:
-                self._logger.error(f"Error loading ground truth {gt_file_path} for {input['file_name']}: {e}. Skipping sample.")
+                self._logger.error(f"Error loading ground truth image {gt_file_path} for {input['file_name']}: {e}. Skipping sample.")
                 continue
-                
+
+            if not gt_loaded_successfully or gt_original is None:
+                 # Should not happen if try block succeeded, but as a safeguard
+                 self._logger.error(f"Failed to load GT {gt_file_path} despite no exception. Skipping.")
+                 continue
+
+            # Check if the mask is binary (0 and 255) - handle potential RGBA
+            if gt_original.ndim == 3 and gt_original.shape[2] in [3, 4]:
+                 gt_check = gt_original[:, :, 0] # Use first channel for check
+            else:
+                 gt_check = gt_original
+
+            unique_vals = np.unique(gt_check)
+            is_binary_mask = set(unique_vals).issubset({0, 255})
+
+            gt = None # Initialize gt to be filled
+            if is_binary_mask:
+                self._logger.debug(f"Detected binary mask (0, 255) for {input.get('file_name', 'unknown')}. Processing category ID.")
+                try:
+                    # Retrieve category_id from the input dict structure
+                    # Assuming the structure from register_biomed_datasets.py
+                    target_category_id = int(input['grounding_info'][0]['category_id'])
+
+                    # Create the new gt mask, initialized with ignore_label
+                    # We need the actual ignore_label value from metadata
+                    ignore_value_for_init = self._ignore_label if isinstance(self._ignore_label, int) else 255 # Default if list?
+                    gt = np.full(gt_check.shape, ignore_value_for_init, dtype=np.int64)
+
+                    # Set background pixels to 0
+                    gt[gt_check == 0] = 0
+                    # Set foreground pixels (255) to the target category_id
+                    gt[gt_check == 255] = target_category_id
+
+                except (KeyError, IndexError, TypeError, ValueError) as e:
+                    self._logger.error(f"Error extracting target category_id for binary mask {input.get('file_name', 'unknown')}: {e}. Input keys: {input.keys()}. Skipping sample.")
+                    continue # Skip this sample if category_id cannot be determined
+            else:
+                 # Not a binary 0/255 mask, assume pixels are category IDs directly
+                 # Apply class offset
+                 gt = gt_original.astype(np.int64) - self._class_offset
+            # <<< --- End Modification --- >>>
+
             # <<< --- Convert GT to Tensor earlier --- >>>
             if isinstance(gt, np.ndarray):
                 gt = torch.from_numpy(gt.astype("long")).to(self._cpu_device)

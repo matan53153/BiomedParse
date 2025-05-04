@@ -37,12 +37,17 @@ from trainer.utils.misc import move_batch_to_device, cast_batch_to_half
 from .utils.misc import hook_metadata, hook_switcher, hook_opt
 from modeling.criterion.pixel_criterion import PixelCriterion
 
+import numpy as np # <-- Add numpy
+import matplotlib.pyplot as plt # <-- Add matplotlib
+from detectron2.utils.comm import get_world_size, is_main_process # <-- Add is_main_process
+
 logger = logging.getLogger(__name__)
 
 
 class XDecoderPipeline:
     def __init__(self, opt):
         self._opt = opt
+        self._cpu_device = torch.device("cpu")
         # logger.info(self._opt['RESUME_FROM']) # Original line was causing issues if RESUME_FROM empty
         # Initialize student criterion if a student model is specified
         self.student_criterion = None
@@ -118,17 +123,41 @@ class XDecoderPipeline:
     ) -> Tuple[Dict[str, float], Dict[str, int], Dict]:
         loss_info, sample_size_info, extra_info = {}, {}, {}
         batch = move_batch_to_device(batch, self._opt['device'])
-        if self._opt['FP16']:
-            # in FP16 mode, DeepSpeed casts the model to FP16, so the input needs to be manually casted to FP16
-            batch = cast_batch_to_half(batch)
+        # --- FIX: Remove manual half casting; autocast should handle this --- 
+        # if self._opt['FP16']:
+        #     batch = cast_batch_to_half(batch)
 
         # --- Conditional Loss Calculation ---
         if self.student_criterion:
             # --- Student Model Training ---
-            # 1. Forward pass through student model
-            student_outputs = trainer.models['default'](batch) # Student model forward
+            # 1. Prepare input tensor for the student model
+            # Use the same logic as in evaluate_model for preparing the ImageList
+            try:
+                images_tensor = [x["image"].to(self._opt['device']) for x in batch]
+                # Get size_divisibility from config
+                size_divisibility = self._opt.get('MODEL', {}).get('DECODER', {}).get('SIZE_DIVISIBILITY', 32)
+                images = ImageList.from_tensors(images_tensor, size_divisibility)
+                input_tensor = images.tensor # BxCxHxW tensor
+            except Exception as e:
+                logger.error(f"Error preparing input tensor for student model: {e}. Skipping batch.")
+                # Return zero loss if input prep fails
+                zero_loss = torch.tensor(0.0, device=self._opt['device'], requires_grad=True)
+                loss_dict = {'loss_sem_seg_ce': zero_loss}
+                total_loss = zero_loss
+                loss_info = {k: v.detach().item() for k, v in loss_dict.items()}
+                sample_size_info = {'num_samples': len(batch)}
+                # Need to call backward even with zero loss if grad accumulation is used
+                trainer.backward_loss(total_loss, model_names=['default'])
+                trainer.update_model(model_name='default')
+                return loss_info, sample_size_info, extra_info
 
-            # 2. Prepare targets (extract gt masks)
+            # 2. Forward pass through the *raw* student model (not the BaseModel wrapper)
+            # trainer.models['default'] is the BaseModel wrapper
+            # trainer.raw_models['default'].model is the actual student model (e.g., StudentResNetSegmentation)
+            raw_student_model = trainer.raw_models['default'].model
+            student_outputs = raw_student_model(input_tensor) # Expects dict {'sem_seg_logits': tensor}
+
+            # 3. Prepare targets (extract gt masks)
             targets = {}
             gt_masks_list = []
             valid_batch = True
@@ -177,8 +206,8 @@ class XDecoderPipeline:
             else:
                 targets['masks'] = None # No valid masks found in batch
 
-            # 3. Calculate loss using PixelCriterion
-            if targets.get('masks') is not None:
+            # 4. Calculate loss using PixelCriterion
+            if targets.get('masks') is not None and student_outputs.get('sem_seg_logits') is not None:
                  loss_dict = self.student_criterion(student_outputs, targets)
                  # Ensure loss requires grad if valid
                  for k, v in loss_dict.items():
@@ -186,10 +215,12 @@ class XDecoderPipeline:
                           v.requires_grad_(True)
             else:
                  # Need to return a zero loss tensor on the correct device that requires grad
+                 log_reason = "masks missing" if targets.get('masks') is None else "logits missing"
+                 logger.warning(f"Skipping student loss calculation because {log_reason}.")
                  zero_loss = torch.tensor(0.0, device=self._opt['device'], requires_grad=True)
-                 loss_dict = {'loss_sem_seg_ce': zero_loss} 
-            
-            # 4. Prepare outputs for trainer
+                 loss_dict = {'loss_sem_seg_ce': zero_loss}
+
+            # 5. Prepare outputs for trainer
             loss_info = {k: v.detach().item() for k, v in loss_dict.items()}
             total_loss = sum(loss_dict.values())
             # --- End Student Model Training ---
@@ -229,7 +260,8 @@ class XDecoderPipeline:
         save_folder,
     ) -> Tuple[Dict, Dict[str, float], bool]:
 
-        model = trainer.raw_models['default'].eval()
+        model = trainer.raw_models['default'] # Keep using the BaseModel wrapper here
+        model.eval() # Set the wrapper and underlying model to eval mode
         # Only call hook_opt if ATTENTION_ARCH is defined, as it modifies that section
         if self._opt.get('ATTENTION_ARCH') is not None:
             self._opt = hook_opt(self._opt)
@@ -303,6 +335,14 @@ class XDecoderPipeline:
                 total_eval_time = 0
                 start_data_time = time.perf_counter()
 
+                max_vis_images = 5 # Number of images to save
+                saved_vis_count = 0
+                vis_save_dir = None
+                if is_main_process(): # Only create dir and save on main process
+                    vis_save_dir = os.path.join(save_folder, "eval_visualizations", re.sub(r'[^a-zA-Z0-9_-]+', '_', dataset_label))
+                    os.makedirs(vis_save_dir, exist_ok=True)
+                    logger.info(f"Saving visualizations to: {vis_save_dir}")
+
                 for idx, batch in enumerate(eval_batch_gen):
                     total_data_time += time.perf_counter() - start_data_time
                     if idx == num_warmup:
@@ -313,21 +353,85 @@ class XDecoderPipeline:
 
                     start_compute_time = time.perf_counter()
                     
-                    images_tensor = [x["image"].to(model.opt['device']) for x in batch]
-                    # Normalization should be handled by the DatasetMapper, remove manual normalization here
-                    # images_tensor = [(x - model.model.pixel_mean) / model.model.pixel_std for x in images_tensor]
-                    # Get size_divisibility from the configuration instead of the model attribute
-                    size_divisibility = self._opt.get('MODEL', {}).get('DECODER', {}).get('SIZE_DIVISIBILITY', 32) # Default to 32 if not found
-                    images = ImageList.from_tensors(images_tensor, size_divisibility)
+                    # --- Evaluation Logic ---
+                    # Check if it's a student model based on config
+                    is_student_model = self._opt['MODEL'].get('STUDENT') is not None and \
+                                       self._opt['MODEL']['NAME'] in [
+                                           'student_resnet50_segmentation',
+                                           'student_vit_segmentation',
+                                           'student_mobilenet_segmentation'
+                                       ]
 
-                    if save_logits_mode:
-                        features = model.model.backbone(images.tensor)
-                        outputs = model.model.sem_seg_head(features)
+                    if is_student_model:
+                        # --- Student Model Evaluation --- #
+                        # Prepare input tensor like in training
+                        try:
+                            images_tensor = [x["image"].to(self._opt['device']) for x in batch]
+                            size_divisibility = self._opt.get('MODEL', {}).get('DECODER', {}).get('SIZE_DIVISIBILITY', 32)
+                            images = ImageList.from_tensors(images_tensor, size_divisibility)
+                            input_tensor = images.tensor
+                        except Exception as e:
+                             logger.error(f"Error preparing input tensor for student eval: {e}. Skipping batch {idx}.")
+                             continue # Skip to next batch
+
+                        # <<< --- Start Modification: Normalize and Cast Input Tensor --- >>>
+                        # Convert to float and normalize (using ImageNet defaults)
+                        try:
+                            imagenet_mean = torch.tensor([0.485, 0.456, 0.406], device=self._opt['device']).view(-1, 1, 1)
+                            imagenet_std = torch.tensor([0.229, 0.224, 0.225], device=self._opt['device']).view(-1, 1, 1)
+
+                            input_tensor_float = input_tensor.float() / 255.0
+                            input_tensor_normalized = (input_tensor_float - imagenet_mean) / imagenet_std
+
+                            # Cast to half precision if FP16 is enabled
+                            if self._opt.get('FP16', False): # Check FP16 flag safely
+                                input_tensor_final = input_tensor_normalized.half()
+                            else:
+                                input_tensor_final = input_tensor_normalized # Keep as float32
+                        except Exception as e:
+                             logger.error(f"Error normalizing/casting input tensor for student eval: {e}. Skipping batch {idx}.")
+                             continue # Skip to next batch
+                        # <<< --- End Modification --- >>>
+
+                        # Pass input tensor directly to the raw student model
+                        raw_student_model = model.model # Get the underlying nn.Module
+                        outputs = raw_student_model(input_tensor_final) # Use the processed tensor
+                        # SemSegEvaluator expects a list of dicts, or a list of tensors.
+                        # Let's adapt the output format. The evaluator primarily uses 'sem_seg' key.
+                        # We need to detach, move to cpu, and potentially split the batch.
+                        processed_outputs = []
+                        if isinstance(outputs, dict) and 'sem_seg_logits' in outputs:
+                            logits_batch = outputs['sem_seg_logits'].detach().cpu() # [B, C, H, W]
+                            for i in range(logits_batch.shape[0]):
+                                # SemSegEvaluator expects {'sem_seg': tensor [C, H, W]} for each image
+                                processed_outputs.append({'sem_seg': logits_batch[i]})
+                        else:
+                            logger.warning(f"Unexpected output format from student model during eval: {type(outputs)}. Skipping batch {idx}.")
+                            continue # Skip to next batch
+                        outputs = processed_outputs # Overwrite with the list expected by evaluator
+                        # Also need the batch_device for evaluator.process
+                        batch_device = move_batch_to_device(batch, self._cpu_device) # Evaluator uses CPU
+
+                    elif save_logits_mode:
+                         # --- Teacher Logit Saving --- #
+                         # Existing logic using ImageList and model.model.backbone etc.
+                         images_tensor = [x["image"].to(model.opt['device']) for x in batch]
+                         size_divisibility = self._opt.get('MODEL', {}).get('DECODER', {}).get('SIZE_DIVISIBILITY', 32)
+                         images = ImageList.from_tensors(images_tensor, size_divisibility)
+                         features = model.model.backbone(images.tensor)
+                         outputs = model.model.sem_seg_head(features)
+                         # Logit saving logic below remains the same, uses this 'outputs' dict
+                         batch_device = None # Not needed for logit saving path
+
                     else:
+                        # --- Original SEEM Model Evaluation --- #
                         batch_device = move_batch_to_device(batch, self._opt['device'])
                         if self._opt['FP16']:
                             batch_device = cast_batch_to_half(batch_device)
+                        # The BaseModel wrapper handles input prep internally for SEEM
                         outputs = model(batch_device, mode=eval_type)
+                        # Evaluator process expects batch on CPU if using default evaluator
+                        batch_device = move_batch_to_device(batch, self._cpu_device) # Move batch to CPU for evaluator
 
                     if torch.cuda.is_available():
                         torch.cuda.synchronize()
@@ -368,8 +472,68 @@ class XDecoderPipeline:
                                 logger.warning(f"Could not find expected logit keys {possible_logit_keys} in model head output for batch {idx} (Dataset: {dataset_label}). Available keys: {available_keys}")
                     else:
                         start_eval_time = time.perf_counter()
-                        self.evaluator.process(batch_device, outputs)
+                        # Process outputs for evaluator if not saving logits
+                        if not save_logits_mode:
+                            # Assuming student output is list containing dict needing processing
+                            processed_outputs = []
+                            # --- FIX: Access list first --- 
+                            processed_output = {"sem_seg": outputs[0]['sem_seg']} # Get dict from list
+                            processed_outputs.append(processed_output)
+                            self.evaluator.process(batch, processed_outputs)
+
+                        else:
+                            self.evaluator.process(batch_device, outputs)
+
                         total_eval_time += time.perf_counter() - start_eval_time
+
+                    if is_main_process() and saved_vis_count < max_vis_images and outputs is not None:
+                        try:
+                            # Determine the correct logits tensor based on model type
+                            if is_student_model:
+                                # --- FIX: Access list index 0 first --- 
+                                # Assuming student outputs a list containing the dict
+                                pred_logits = outputs[0]['sem_seg'] # Shape [C, H, W]
+                            else:
+                                # Assuming teacher outputs list of dicts
+                                pred_logits = outputs[0]['sem_seg'] # Shape [C, H, W]
+
+                            pred_mask = torch.argmax(pred_logits, dim=0).cpu().numpy().astype(np.uint8)
+                            # --- FIX: Access ground truth mask correctly --- 
+                            # Access via instances object added by the dataset mapper
+                            gt_mask = batch[0]["instances"].gt_masks.tensor[0].cpu().numpy().astype(np.uint8) # Get first mask tensor in batch
+                            
+                            # --- Determine filename --- 
+                            file_name = batch[0].get('file_name', f'unknown_idx_{idx}')
+                            base_name = os.path.basename(file_name)
+                            name_part = os.path.splitext(base_name)[0]
+                            
+                            # --- Save Masks --- #
+                            # Save Ground Truth
+                            gt_filename = os.path.join(vis_save_dir, f"{name_part}_gt_mask.png")
+                            plt.imsave(gt_filename, gt_mask, cmap='viridis') # Use a colormap 
+
+                            # Save Prediction
+                            pred_filename = os.path.join(vis_save_dir, f"{name_part}_pred_mask.png")
+                            plt.imsave(pred_filename, pred_mask, cmap='viridis')
+                            
+                            # (Optional) Save Input Image - requires normalization reversal potentially
+                            # try:
+                            #     input_image = batch[0]['image'].cpu().numpy()
+                            #     # Assuming CHW format, convert to HWC for saving
+                            #     input_image_display = np.transpose(input_image, (1, 2, 0))
+                            #     # Placeholder for potential denormalization
+                            #     # input_image_display = denormalize(input_image_display) 
+                            #     input_image_display = np.clip(input_image_display, 0, 255).astype(np.uint8)
+                            #     img_filename = os.path.join(vis_save_dir, f"{name_part}_input.png")
+                            #     plt.imsave(img_filename, input_image_display)
+                            # except KeyError:
+                            #      logger.warning(f"Could not save input image for {name_part}: 'image' key missing or format issue.")
+                            
+                            saved_vis_count += 1
+                        except Exception as e:
+                             logger.error(f"Error saving visualization for batch {idx}: {e}", exc_info=True)
+                             # Prevent repeated errors if one sample fails
+                             saved_vis_count = max_vis_images 
 
                     iters_after_start = idx + 1 - num_warmup * int(idx >= num_warmup)
                     data_seconds_per_iter = total_data_time / iters_after_start
