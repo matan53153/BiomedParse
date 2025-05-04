@@ -18,13 +18,16 @@
 
 ## BiomedParse Inference
 
-- [ ] Implement inference script for BiomedParse
-- [ ] Run inference on test set to generate teacher logits
-- [ ] Measure and document inference time and resource usage
-- [ ] Store teacher model outputs for distillation
+- [x] Implement inference script for BiomedParse
+- [x] Run inference on train set to generate teacher logits
+- [x] Measure and document inference time and resource usage (just look at logs)
+- [x] Store teacher model outputs for distillation
+
+- [ ] Redo the above for as large of the dataset you want (right now it's just a smaller subset for testing)
 
 ## Student Model Implementation
 
+- [ ] Implement ResNet-50 student architecture
 - [ ] Implement ViT-Base student architecture
 - [ ] Implement MobileNet student architecture
 - [ ] Verify student models can process input data correctly

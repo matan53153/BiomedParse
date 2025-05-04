@@ -50,15 +50,24 @@ class UtilsTrainer(DistributedTrainer):
         return {}
 
     def _initialize_ddp(self):
-        if self.opt['FP16']:
-            from torch.cuda.amp import GradScaler
-            self.grad_scaler = GradScaler()
-            logger.warning("PyTorch AMP GradScaler initialized.")
+        logger.info("Entering _initialize_ddp")
+        # Remove GradScaler initialization from here
+        # if self.opt['FP16']:
+        #     logger.info(f"FP16 is True in _initialize_ddp. Initializing GradScaler.")
+        #     from torch.cuda.amp import GradScaler
+        #     self.grad_scaler = GradScaler()
+        #     logger.info("PyTorch AMP GradScaler initialized.")
+        # else:
+        #     logger.info("FP16 is False in _initialize_ddp. Skipping GradScaler.")
 
         for module_name in self.model_names:
             if self.opt['world_size'] > 1:
+                # Convert BatchNorm modules to SyncBatchNorm before wrapping with DDP
+                logger.info(f"Converting BatchNorm layers to SyncBatchNorm for model: {module_name}")
+                model_to_wrap = nn.SyncBatchNorm.convert_sync_batchnorm(self.models[module_name])
+
                 # ddp: wrap modules for distributed data parallel training
-                self.models[module_name] = nn.parallel.DistributedDataParallel(self.models[module_name],
+                self.models[module_name] = nn.parallel.DistributedDataParallel(model_to_wrap,
                                                         device_ids=[self.opt['local_rank']],
                                                         output_device=self.opt['local_rank'],
                                                         find_unused_parameters=self.opt.get('FIND_UNUSED_PARAMETERS', True))

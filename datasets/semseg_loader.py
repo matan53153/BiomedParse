@@ -4,7 +4,7 @@ import numpy as np
 
 def load_semseg(filename, loader_type):
     if loader_type == 'PIL':
-        semseg = np.array(Image.open(filename), dtype=np.int)
+        semseg = np.array(Image.open(filename), dtype=np.int64)
     elif loader_type == 'MAT':
         semseg = scipy.io.loadmat(filename)['LabelMap']
     return semseg

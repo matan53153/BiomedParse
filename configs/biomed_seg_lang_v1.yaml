@@ -242,11 +242,18 @@ ATTENTION_ARCH:
 DATASETS:
   TRAIN: [
     'biomed_Task01_BrainTumour_train', # MRI
-    'biomed_Task06_Lung_train',        # CT
-    'biomed_CXR_Masks_and_Labels_train', # X-Ray
-    'biomed_BreastUS_train',           # Ultrasound
-    'biomed_GlaS_train',               # Microscopy
-    'biomed_ISIC_train'                # Photos/Dermoscopy
+    'biomed_Task02_Heart_train',      # MRI
+    'biomed_Task03_Liver_train',      # MRI
+    'biomed_Task04_Hippocampus_train', # MRI
+    'biomed_Task05_Prostate_train',   # MRI
+    'biomed_Task06_Lung_train',       # CT
+    'biomed_Task07_Pancreas_train',   # CT
+    'biomed_Task08_HepaticVessel_train', # CT
+    'biomed_Task09_Spleen_train',     # CT
+    # 'biomed_CXR_Masks_and_Labels_train', # X-Ray
+    # 'biomed_BreastUS_train',           # Ultrasound
+    # 'biomed_GlaS_train',               # Microscopy
+    # 'biomed_ISIC_train'                # Photos/Dermoscopy
   ]
 
 # 'biomed_Task09_Spleen_test', 'biomed_Task08_HepaticVessel_test', 'biomed_Task07_Pancreas_test', 'biomed_Task06_Lung_test',
@@ -260,12 +267,46 @@ DATASETS:
 #     'biomed_ACDC_test'
 
   TEST:  [
-    'biomed_Task01_BrainTumour_test', # MRI
-    'biomed_Task06_Lung_test',        # CT
-    'biomed_CXR_Masks_and_Labels_test', # X-Ray
-    'biomed_BreastUS_test',           # Ultrasound
-    'biomed_GlaS_test',               # Microscopy
-    'biomed_ISIC_test'                # Photos/Dermoscopy
+    # 'biomed_Task01_BrainTumour_train',
+    # 'biomed_Task02_Heart_train',
+    # 'biomed_Task03_Liver_train',
+    # 'biomed_Task04_Hippocampus_train',
+    # 'biomed_Task05_Prostate_train',
+    # 'biomed_Task06_Lung_train',
+    # 'biomed_Task07_Pancreas_train',
+    # 'biomed_Task08_HepaticVessel_train',
+    # 'biomed_Task09_Spleen_train',
+    'biomed_UWaterlooSkinCancer_train',
+    'biomed_kits23_train',
+    'biomed_Radiography_Viral_Pneumonia_train',
+    'biomed_Radiography_Normal_train',
+    'biomed_Radiography_Lung_Opacity_train',
+    'biomed_Radiography_COVID_train',
+    'biomed_siim-acr-pneumothorax_train',
+    'biomed_REFUGE_train',
+    'biomed_QaTa-COV19_train',
+    'biomed_PolypGen_train',
+    'biomed_PanNuke_train',
+    'biomed_OCT-CME_train',
+    'biomed_NeoPolyp_train',
+    'biomed_MMs_train',
+    'biomed_LiverUS_train',
+    'biomed_LIDC-IDRI_train',
+    'biomed_LGG_train',
+    'biomed_GlaS_train',
+    'biomed_G1020_train',
+    'biomed_FH-PS-AOP_train',
+    'biomed_DRIVE_train',
+    'biomed_CXR_Masks_and_Labels_train',
+    'biomed_ISIC_train',
+    'biomed_COVID-QU-Ex_train',
+    'biomed_COVID-19_CT_train',
+    'biomed_CDD-CESM_train',
+    'biomed_amos_22_MRI_train',
+    'biomed_amos_22_CT_train',
+    'biomed_CAMUS_train',
+    'biomed_BreastUS_train',
+    'biomed_ACDC_train'
   ]
   
   CLASS_CONCAT: false
@@ -355,3 +396,8 @@ SOLVER:
     CLIP_VALUE: 5.0 # 0.01
     NORM_TYPE: 2.0
   MAX_NUM_EPOCHS: 50
+
+# Add EVAL section with default keys for overrides
+EVAL:
+  SAVE_LOGITS: False
+  LOGITS_SAVE_DIR: None

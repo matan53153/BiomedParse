@@ -1,0 +1,326 @@
+# --------------------------------------------------------
+# X-Decoder -- Generalized Decoding for Pixel, Image, and Language
+# Copyright (c) 2022 Microsoft
+# Licensed under The MIT License [see LICENSE for details]
+# Written by Xueyan Zou (xueyan@cs.wisc.edu)
+# --------------------------------------------------------
+# THIS FILE IS BASED ON biomed_seg_lang_v1.yaml WITH STUDENT OVERRIDES APPLIED
+
+# Define Test/Trainer/Saving
+PIPELINE: XDecoderPipeline
+TRAINER: xdecoder
+SAVE_DIR: './output'
+base_path: "./"
+
+# Resume Logistic
+RESUME: true
+WEIGHT: false
+RESUME_FROM: 'output/student_resnet50.yaml_conf~/run_26/00004194'
+EVAL_AT_START: false
+SAVE_CHECKPOINT: True
+
+# Logging and Debug
+WANDB: False
+LOG_EVERY: 100
+FIND_UNUSED_PARAMETERS: false # Set to True if debugging unused params
+
+# Speed up training
+FP16: true # Enable FP16 Mixed Precision Training
+PORT: '36873'
+
+# misc
+LOADER:
+  JOINT: True
+  KEY_DATASET: ""
+  SAMPLE_PROB: "prop"    # sampling probability proportional to data size. Use "equal" for each bach from all datasets
+  MIXING_LEVEL: 1    # num of different datasets for batch mixing on each GPU
+
+RANDOM_SEED: 2024 # Explicitly set for student
+
+STANDARD_TEXT_FOR_EVAL: False
+
+##################
+# Task settings
+##################
+VERBOSE: true
+
+MODEL:
+  # --- Student Overrides ---
+  NAME: student_resnet50_segmentation # STUDENT MODEL NAME
+  STUDENT:                             # STUDENT SPECIFIC SECTION
+    BACKBONE_NAME: resnet50
+    PRETRAINED: True
+    NUM_CLASSES: 16 # Matches original ENCODER.NUM_CLASSES
+  # --- End Student Overrides ---
+
+  HEAD: xdecoder_head # Keep from original? Or should be null/different for student? Check student model architecture. Assuming needed for now.
+  MASK_ON: false # Keep from original
+  KEYPOINT_ON: false # Keep from original
+  LOAD_PROPOSALS: false # Keep from original
+  DIM_PROJ: 512 # Keep from original
+
+  TEXT: # Null out TEXT section for student
+    ARCH: null
+    NAME: null
+    TOKENIZER: null
+    CONTEXT_LENGTH: null
+    WIDTH: null
+    HEADS: null
+    LAYERS: null
+    AUTOGRESSIVE: null
+
+  BACKBONE: # Null out SEEM backbone section, student backbone defined in MODEL.STUDENT
+    NAME: null
+    PRETRAINED: null
+    LOAD_PRETRAINED: null
+    FOCAL: null # Null out FocalNet specific settings
+
+  ENCODER: # Keep structure, NUM_CLASSES is aligned with MODEL.STUDENT.NUM_CLASSES
+    NAME: transformer_encoder_fpn # Keep from original? Or null? Depends if student uses this. Assuming needed.
+    IGNORE_VALUE: 255
+    NUM_CLASSES: 16 # Aligns with MODEL.STUDENT.NUM_CLASSES
+    BINARY_CLASSES: False
+    LOSS_WEIGHT: 1.0
+    CONVS_DIM: 512 # Keep from original
+    MASK_DIM: 512 # Keep from original
+    NORM: "GN"
+    IN_FEATURES: ["res2", "res3", "res4", "res5"] # Keep from original, ResNet features
+    DEFORMABLE_TRANSFORMER_ENCODER_IN_FEATURES: ["res3", "res4", "res5"] # Keep from original
+    COMMON_STRIDE: 4
+    TRANSFORMER_ENC_LAYERS: 6
+
+  DECODER: # Keep structure, disable features not used by simple student
+    NAME: seem_v1 # Keep from original? Or null? Assuming structure needed.
+    TRANSFORMER_IN_FEATURE: "multi_scale_pixel_decoder" # Keep from original? Or null?
+
+    MASK:
+      ENABLED: True # Student performs segmentation
+    DETECTION:
+      ENABLED: False # Student likely doesn't do detection
+    SPATIAL:
+      ENABLED: False # Student doesn't use spatial queries
+      MAX_ITER: 1
+    GROUNDING:
+      ENABLED: False # Student doesn't use grounding
+      MAX_LEN: 10
+      TEXT_WEIGHT: 2.0
+      CLASS_WEIGHT: 0.5
+    RETRIEVAL:
+      ENABLED: False # Student doesn't use retrieval
+    LVIS:
+      ENABLED: False # Student doesn't use LVIS specifics
+      THRES: 0.7
+    OPENIMAGE:
+      ENABLED: False # Student doesn't use OpenImage specifics
+      NEGATIVE_SAMPLES: 5
+      GROUNDING:
+        ENABLED: False
+        MAX_LEN: 5
+    CAPTION:
+      ENABLED: False # Student doesn't do captioning
+      PHRASE_PROB: 0.5
+      SIM_THRES: 0.95
+
+    # Keep weights/params from original, adjust if necessary for student loss
+    DEEP_SUPERVISION: True # Keep original? Or False for simple student?
+    NO_OBJECT_WEIGHT: 0.1
+    GCLASS_WEIGHT: 0.4
+    GMASK_WEIGHT: 1.0
+    GDICE_WEIGHT: 1.0
+    SCLASS_WEIGHT: 0.4
+    SMASK_WEIGHT: 1.0
+    SDICE_WEIGHT: 1.0
+    OCLASS_WEIGHT: 0.4
+    OMASK_WEIGHT: 1.0
+    ODICE_WEIGHT: 1.0
+    CLASS_WEIGHT: 1.0 # Student override? Default from PixelCriterion logic was 1.0
+    MASK_WEIGHT: 1.0  # Student override? Default from PixelCriterion logic was 1.0
+    DICE_WEIGHT: 1.0  # Student override? Default from PixelCriterion logic was 1.0
+    BBOX_WEIGHT: 0.0 # Student doesn't predict bounding boxes
+    GIOU_WEIGHT: 0.0 # Student doesn't predict bounding boxes
+    CAPTION_WEIGHT: 0.0 # Student doesn't predict captions
+    COST_SPATIAL: # Keep structure, values might not be used if SPATIAL.ENABLED is False
+      CLASS_WEIGHT: 5.0
+      MASK_WEIGHT: 2.0
+      DICE_WEIGHT: 2.0
+
+    # Keep structural params from original, adjust if needed for student head
+    HIDDEN_DIM: 512
+    NUM_OBJECT_QUERIES: 101 # Keep from original? Or 1 for student?
+    NHEADS: 8
+    DROPOUT: 0.0
+    DIM_FEEDFORWARD: 2048
+    MAX_SPATIAL_LEN: [512, 512, 512, 512] # Keep structure
+    # ENC_LAYERS: 0
+    PRE_NORM: False
+    ENFORCE_INPUT_PROJ: False
+    SIZE_DIVISIBILITY: 32
+    TRAIN_NUM_POINTS: 12544 # Keep structure
+    OVERSAMPLE_RATIO: 3.0
+    IMPORTANCE_SAMPLE_RATIO: 0.75
+    DEC_LAYERS: 10  # Keep from original? Or specify student decoder layers?
+    TOP_GROUNDING_LAYERS: 10 # Keep structure
+    TOP_CAPTION_LAYERS: 10 # Keep structure
+    TOP_SPATIAL_LAYERS: 10 # Keep structure
+    TOP_OPENIMAGE_LAYERS: 10 # Keep structure
+
+    TEST: # Keep structure from original, adjust for student eval
+      SEMANTIC_ON: True # Student performs semantic segmentation
+      INSTANCE_ON: False
+      PANOPTIC_ON: False
+      OVERLAP_THRESHOLD: 0.8
+      OBJECT_MASK_THRESHOLD: 0.8
+      SEM_SEG_POSTPROCESSING_BEFORE_INFERENCE: true # Keep original?
+
+# Spatial sampler - Keep full structure from original
+STROKE_SAMPLER:
+  MAX_CANDIDATE: 1
+  CANDIDATE_PROBS: [0.25, 0.25, 0.25, 0.25] # for training only
+  CANDIDATE_NAMES: ["Point", "Polygon", "Scribble", "Circle"]
+  DILATION: 3
+  CIRCLE:
+    NUM_STROKES: 5
+    STROKE_PRESET: ['object_like', 'object_like_middle', 'object_like_small']
+    STROKE_PROB: [0.33, 0.33, 0.33]
+  SCRIBBLE:
+    NUM_STROKES: 5
+    STROKE_PRESET: ['rand_curve', 'rand_curve_small']
+    STROKE_PROB: [0.5, 0.5]
+  POINT:
+    NUM_POINTS: 20
+  POLYGON:
+    MAX_POINTS: 9
+  EVAL:
+    MODE: 'best' # best/random/best_random
+    NEGATIVE: False
+    MAX_ITER: 1
+    IOU_ITER: 1
+    GROUNDING: True # Keep original? Doesn't align with DECODER.GROUNDING.ENABLED=False
+
+# Multi-modal Architecture - Null out for student
+ATTENTION_ARCH: null
+#   VARIABLE: null
+#   SELF_ATTENTION: null
+#   CROSS_ATTENTION: null
+#   MASKING: null
+#   DUPLICATION: null
+#   SPATIAL_MEMORIES: null
+#   QUERY_NUMBER: null
+
+DATASETS: # Use datasets specified in the previous student config
+  TRAIN: [
+    'biomed_Task01_BrainTumour_train', # MRI
+    # 'biomed_Task02_Heart_train',      # MRI
+    # 'biomed_Task03_Liver_train',      # MRI
+    # 'biomed_Task04_Hippocampus_train', # MRI
+    # 'biomed_Task05_Prostate_train',   # MRI
+    'biomed_Task06_Lung_train',       # CT
+    # 'biomed_Task07_Pancreas_train',   # CT
+    # 'biomed_Task08_HepaticVessel_train', # CT
+    # 'biomed_Task09_Spleen_train',     # CT
+  ]
+  TEST:  [
+    'biomed_Task01_BrainTumour_test',
+    'biomed_Task02_Heart_test',
+    'biomed_Task03_Liver_test',
+    'biomed_Task04_Hippocampus_test',
+    'biomed_Task05_Prostate_test',
+    'biomed_Task06_Lung_test',
+    'biomed_Task07_Pancreas_test',
+    'biomed_Task08_HepaticVessel_test',
+    'biomed_Task09_Spleen_test',
+  ]
+  CLASS_CONCAT: false
+  SIZE_DIVISIBILITY: 32
+  PROPOSAL_FILES_TRAIN: []
+
+INPUT: # Use ImageNet defaults as per previous student config? Or BioMed specific? Using ImageNet for now.
+  PIXEL_MEAN: [123.675, 116.280, 103.530]
+  PIXEL_STD: [58.395, 57.120, 57.375]
+
+TRAIN: # Keep from original/student config
+  ASPECT_RATIO_GROUPING: true
+  BATCH_SIZE_TOTAL: 4
+  BATCH_SIZE_PER_GPU: 4
+  SHUFFLE: true
+
+TEST: # Keep from original/student config, ensure IOU_TYPE is segm only
+  DETECTIONS_PER_IMAGE: 100
+  NAME: coco_eval # Or a different evaluator if needed
+  IOU_TYPE: ['segm'] # Student only does segmentation
+  USE_MULTISCALE: false
+  BATCH_SIZE_TOTAL: 4
+  MODEL_FILE: ''
+  AUG:
+    ENABLED: False
+
+DATALOADER: # Keep from original/student config
+  FILTER_EMPTY_ANNOTATIONS: False
+  NUM_WORKERS: 8
+  LOAD_PROPOSALS: False
+  SAMPLER_TRAIN: "TrainingSampler"
+  ASPECT_RATIO_GROUPING: True
+
+BioMed: # Keep from original/student config
+  INPUT:
+    # Use top-level INPUT for mean/std
+    # PIXEL_MEAN: [64.284, 59.293, 59.962] # BioMed specific mean/std
+    # PIXEL_STD: [62.484, 60.865, 59.835]  # BioMed specific mean/std
+    DATASET_MAPPER_NAME: "biomed_interactive" # Keep original, seems required
+    MIN_SIZE_TRAIN: 900
+    MAX_SIZE_TRAIN: 1100
+    MIN_SIZE_TRAIN_SAMPLING: 'choice'
+    MIN_SIZE_TEST: 900
+    MAX_SIZE_TEST: 1100
+    IMAGE_SIZE: 1024
+    MIN_SCALE: 0.9
+    MAX_SCALE: 1.1
+    IGNORE_VALUE: 255 # Must match ENCODER.IGNORE_VALUE
+    COLOR_AUG_SSD: False
+    SIZE_DIVISIBILITY: 32
+    RANDOM_FLIP: "none"
+    RANDOM_ROTATE: False
+    MASK_FORMAT: "polygon" # Keep original
+    MIN_AREA: 30
+    FORMAT: "RGB"
+    SPATIAL: False # Override: Student doesn't use spatial queries
+    CROP:
+      ENABLED: True
+  DATASET:
+    DATASET: "biomed"
+
+# Detectron2 training config for optimizer and lr scheduler
+SOLVER: # Apply student overrides to the original base structure
+  BASE_LR: 0.00005 # Student specific LR
+  STEPS: [0.88889, 0.96296] # Keep original stepping
+  MAX_ITER: 1 # Calculated later based on epochs
+  GAMMA: 0.1
+  WARMUP_FACTOR: 1.0
+  WARMUP_ITERS: 10
+  WARMUP_METHOD: "linear"
+  WEIGHT_DECAY: 0.05
+  OPTIMIZER: "ADAMW"
+  LR_SCHEDULER_NAME: "WarmupMultiStepLR"
+  LR_MULTIPLIER: # Student overrides
+     backbone: 0.1 # Fine-tune backbone slower
+     lang_encoder: null # Not used
+     pixel_decoder: null # Not used? Or refers to head?
+     head: 1.0 # Assuming 'head' refers to the student's final layers
+  FIX_PARAM: # Student overrides
+     backbone: False # Train the student backbone
+     lang_encoder: null # Not used
+     pixel_decoder: null # Not used? Or refers to head?
+     head: False # Train the student head layers
+  WEIGHT_DECAY_NORM: 0.0
+  WEIGHT_DECAY_EMBED: 0.0
+  CLIP_GRADIENTS:
+    ENABLED: True
+    CLIP_TYPE: "full_model"
+    CLIP_VALUE: 5.0 # Keep original
+    NORM_TYPE: 2.0
+  MAX_NUM_EPOCHS: 50 # Student override (keep previous value)
+
+# EVAL settings
+EVAL: # Use student settings
+  SAVE_LOGITS: False
+  LOGITS_SAVE_DIR: None 

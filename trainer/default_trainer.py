@@ -201,7 +201,22 @@ class DefaultTrainer(UtilsTrainer, DistributedTrainer):
 
         self.create_optimizer_and_scheduler()
         self.models = {model_name: self.raw_models[model_name] for model_name in self.model_names}
+        
+        logger.info(f"Rank {self.opt['rank']}: About to call self._initialize_ddp()")
         self._initialize_ddp()
+        logger.info(f"Rank {self.opt['rank']}: Finished calling self._initialize_ddp()")
+        # Initialize GradScaler here if FP16 is enabled
+        if self.opt['FP16']:
+            from torch.cuda.amp import GradScaler
+            self.grad_scaler = GradScaler()
+            logger.info(f"Rank {self.opt['rank']}: Initialized GradScaler in init_train.")
+            if not hasattr(self, 'grad_scaler'): # Double check
+                 logger.error(f"Rank {self.opt['rank']}: GradScaler initialization FAILED in init_train!")
+        else:
+             logger.info(f"Rank {self.opt['rank']}: FP16 is False, skipping GradScaler in init_train.")
+             # Ensure grad_scaler doesn't exist if FP16 is false
+             if hasattr(self, 'grad_scaler'):
+                 del self.grad_scaler
 
         if self.opt.get('WEIGHT', False):
             self.load_weight(self.opt['RESUME_FROM'], must_exist=True)
@@ -303,3 +318,14 @@ class DefaultTrainer(UtilsTrainer, DistributedTrainer):
 
         # if not self.opt.get('SAVE_CHECKPOINT', True):
         #     self.save_checkpoint(self.train_params['num_updates'])
+
+    def _initialize_ddp(self):
+        if self.opt['world_size'] > 1:
+            # Convert BatchNorm modules to SyncBatchNorm before wrapping with DDP
+            logger.info(f"Converting BatchNorm layers to SyncBatchNorm for model: {self.model_names[0]}")
+            model_to_wrap = nn.SyncBatchNorm.convert_sync_batchnorm(self.models[self.model_names[0]])
+            # ddp: wrap modules for distributed data parallel training
+            self.models[self.model_names[0]] = nn.parallel.DistributedDataParallel(model_to_wrap,
+                                                            device_ids=[self.opt['local_rank']],
+                                                            output_device=self.opt['local_rank'],
+                                                            find_unused_parameters=self.opt.get('FIND_UNUSED_PARAMETERS', True))

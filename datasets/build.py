@@ -292,14 +292,23 @@ def _train_loader_from_config(cfg, dataset_name, mapper, *, dataset=None, sample
         sampler_name = cfg_dataloader['SAMPLER_TRAIN']
         logger = logging.getLogger(__name__)
         logger.info("Using training sampler {}".format(sampler_name))
-        sampler = TrainingSampler(len(dataset))
+        if sampler_name == "TrainingSampler":
+            sampler = TrainingSampler(len(dataset))
+        else:
+            raise ValueError("Unknown training sampler {}".format(sampler_name))
+
+    # Calculate total batch size based on per-GPU setting and world size
+    batch_size_per_gpu = cfg['TRAIN']['BATCH_SIZE_PER_GPU']
+    world_size = get_world_size() # Assumes get_world_size() is available
+    total_batch_size = batch_size_per_gpu * world_size
+    logger.info(f"Building train loader: BATCH_SIZE_PER_GPU={batch_size_per_gpu}, world_size={world_size}, calculated TOTAL_BATCH_SIZE={total_batch_size}")
 
     return {
         "dataset": dataset,
         "sampler": sampler,
         "mapper": mapper,
-        "total_batch_size": cfg['TRAIN']['BATCH_SIZE_TOTAL'],
-        "aspect_ratio_grouping": cfg_dataloader['ASPECT_RATIO_GROUPING'],
+        "total_batch_size": total_batch_size, # <-- Use calculated total size
+        "aspect_ratio_grouping": cfg['TRAIN']['ASPECT_RATIO_GROUPING'],
         "num_workers": cfg_dataloader['NUM_WORKERS'],
     }
 
@@ -535,6 +544,22 @@ def build_evaluator(cfg, dataset_name, output_folder=None):
     if output_folder is None:
         output_folder = os.path.join(cfg["SAVE_DIR"], "inference")
     evaluator_list = []
+    
+    # --- Add check for student models --- 
+    model_name = cfg.get('MODEL', {}).get('NAME', '')
+    is_student_seg_model = model_name in ['student_resnet50_segmentation',
+                                          'student_mobilenet_segmentation',
+                                          'student_vit_segmentation']
+
+    if is_student_seg_model:
+        # logger.info(f"Detected student segmentation model ({model_name}). Forcing SemSegEvaluator.")
+        return SemSegEvaluator(
+            dataset_name,
+            distributed=True,
+            output_dir=output_folder,
+        )
+    # --- End check for student models ---
+
     evaluator_type = MetadataCatalog.get(dataset_name).evaluator_type
 
     # semantic segmentation
