@@ -231,13 +231,15 @@ ATTENTION_ARCH:
 
 DATASETS:
   TRAIN: [
-  'biomed_BiomedParseData-Demo_demo'    # Add your registered training datasets here
+  # 'biomed_BiomedParseData-Demo_demo'    # Add your registered training datasets here
+  'biomed_UWaterlooSkinCancer_train'
   ]
 
 
 
   TEST:  [
-  'biomed_BiomedParseData-Demo_demo'   # Add your registered test datasets here
+  # 'biomed_BiomedParseData-Demo_demo',
+  'biomed_UWaterlooSkinCancer_test'
   ]
   
   CLASS_CONCAT: false

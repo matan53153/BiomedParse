@@ -88,14 +88,53 @@ class GroundingEvaluator(DatasetEvaluator):
 
     def process(self, inputs, outputs):
         for input, output in zip(inputs, outputs):
+            # Get predicted mask (binary threshold at 0.5)
             pred = output['grounding_mask'].sigmoid() > 0.5
-            # # save pixel probability
-            # prob = output['grounding_mask'].sigmoid().cpu().numpy()[0] * 255
-            # pred_file = input['file_name'].split('.')[0].replace('test/', 'test_pred/') + '_' + input['groundings']['texts'][0].replace(' ', '+') + '.png'
-            # if not os.path.exists('/'.join(pred_file.split('/')[:-1])):
-            #     os.makedirs('/'.join(pred_file.split('/')[:-1]), exist_ok=True)
-            # plt.imsave(pred_file, 
-            #            prob.astype(np.uint8), cmap='gray')
+            
+            # Get ground truth mask
+            gt = input['groundings']['masks'].bool()
+            
+            # Save both ground truth and predicted masks as images
+            # Create directory for saving segmentation results
+            save_dir = os.path.join(os.getcwd(), 'segmentation_results')
+            os.makedirs(save_dir, exist_ok=True)
+            
+            # Get image identifier from file name
+            if 'file_name' in input:
+                img_id = os.path.basename(input['file_name']).split('.')[0]
+            else:
+                img_id = f"image_{input.get('image_id', 'unknown')}"
+                
+            # Get text prompt if available
+            if 'groundings' in input and 'texts' in input['groundings'] and len(input['groundings']['texts']) > 0:
+                text_prompt = input['groundings']['texts'][0].replace(' ', '+')
+            else:
+                text_prompt = 'unknown_prompt'
+            
+            # Create base filename
+            base_filename = f"{img_id}_{text_prompt}"
+            
+            # Save probability map (raw sigmoid output)
+            prob = output['grounding_mask'].sigmoid().cpu().numpy()[0] * 255
+            prob_file = os.path.join(save_dir, f"{base_filename}_prob.png")
+            plt.imsave(prob_file, prob.astype(np.uint8), cmap='gray')
+            
+            # Save predicted binary mask
+            pred_mask = pred[0].cpu().numpy().astype(np.uint8) * 255
+            pred_file = os.path.join(save_dir, f"{base_filename}_pred.png")
+            plt.imsave(pred_file, pred_mask, cmap='gray')
+            
+            # Save ground truth mask
+            gt_mask = gt[0].cpu().numpy().astype(np.uint8) * 255
+            gt_file = os.path.join(save_dir, f"{base_filename}_gt.png")
+            plt.imsave(gt_file, gt_mask, cmap='gray')
+            
+            # Save overlay visualization (ground truth in red, prediction in green, overlap in yellow)
+            overlay = np.zeros((gt_mask.shape[0], gt_mask.shape[1], 3), dtype=np.uint8)
+            overlay[..., 0] = gt_mask  # Red channel for ground truth
+            overlay[..., 1] = pred_mask  # Green channel for prediction
+            overlay_file = os.path.join(save_dir, f"{base_filename}_overlay.png")
+            plt.imsave(overlay_file, overlay)
 
             gt = input['groundings']['masks'].bool()
             bsi = len(pred)
@@ -170,4 +209,28 @@ class GroundingEvaluator(DatasetEvaluator):
             results['mBIoU'] = (self.mIoU_box*100./self.seg_total).item()
 
         self._logger.info(results)
+        
+        # Save detailed evaluation results to a JSON file
+        import json
+        import os
+        from datetime import datetime
+        
+        # Create results directory if it doesn't exist
+        results_dir = os.path.join(os.getcwd(), 'evaluation_results')
+        os.makedirs(results_dir, exist_ok=True)
+        
+        # Create a timestamped filename
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        results_file = os.path.join(results_dir, f'{self._dataset_name}_eval_{timestamp}.json')
+        
+        # Save results and instance-level data
+        with open(results_file, 'w') as f:
+            json.dump({
+                'dataset': self._dataset_name,
+                'metrics': results,
+                'instance_results': self.instance_results
+            }, f, indent=2)
+        
+        self._logger.info(f'Saved detailed evaluation results to {results_file}')
+        
         return {'grounding': {'scores': results, 'instance_results': self.instance_results}}

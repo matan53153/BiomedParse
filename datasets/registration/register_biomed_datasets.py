@@ -17,8 +17,8 @@ from detectron2.utils.file_io import PathManager
 _PREDEFINED_SPLITS_BIOMED = {}
 
 # example of registering a dataset
-datasets = ['BiomedParseData-Demo', ]   # provide name of the dataset under biomedparse_datasets
-splits = ['demo']    # provide split name, e.g., train, test, val. Here there is only one 'demo' split in the example demo dataset
+datasets = ['UWaterlooSkinCancer']   # provide name of the dataset under biomedparse_datasets
+splits = ['train','test']    # provide split name, e.g., train, test, val. Here there is only one 'demo' split in the example demo dataset
 
 # Here we register all the splits of the dataset
 for name in datasets:
