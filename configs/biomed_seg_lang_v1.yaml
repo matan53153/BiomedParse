@@ -127,6 +127,7 @@ MODEL:
       ENABLED: False
     AUDIO:
       ENABLED: False
+      
     DEEP_SUPERVISION: True
     NO_OBJECT_WEIGHT: 0.1
     GCLASS_WEIGHT: 0.4
@@ -271,7 +272,8 @@ DATASETS:
 #     'biomed_ACDC_test'
 
   TEST:  [
-    'biomed_Task06_Lung_test',       # CT
+    # 'biomed_Task06_Lung_test',       # CT
+    'biomed_UWaterlooSkinCancer_test',
     # 'biomed_Task01_BrainTumour_train',
     # 'biomed_Task02_Heart_train',
     # 'biomed_Task03_Liver_train',

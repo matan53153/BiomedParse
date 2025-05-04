@@ -474,11 +474,21 @@ class XDecoderPipeline:
                         start_eval_time = time.perf_counter()
                         # Process outputs for evaluator if not saving logits
                         if not save_logits_mode:
-                            # Assuming student output is list containing dict needing processing
+                            # Process model outputs for evaluation
                             processed_outputs = []
-                            # --- FIX: Access list first --- 
-                            processed_output = {"sem_seg": outputs[0]['sem_seg']} # Get dict from list
-                            processed_outputs.append(processed_output)
+                            
+                            # Handle different output formats from different models
+                            for output in outputs:
+                                processed_output = {}
+                                # Check if 'sem_seg' exists in the output
+                                if 'sem_seg' in output:
+                                    processed_output['sem_seg'] = output['sem_seg']
+                                # If sem_seg doesn't exist but we have the entire output dict, use it directly
+                                elif isinstance(output, dict):
+                                    processed_output = output
+                                
+                                processed_outputs.append(processed_output)
+                            
                             self.evaluator.process(batch, processed_outputs)
 
                         else:
@@ -488,14 +498,37 @@ class XDecoderPipeline:
 
                     if is_main_process() and saved_vis_count < max_vis_images and outputs is not None:
                         try:
-                            # Determine the correct logits tensor based on model type
-                            if is_student_model:
-                                # --- FIX: Access list index 0 first --- 
-                                # Assuming student outputs a list containing the dict
-                                pred_logits = outputs[0]['sem_seg'] # Shape [C, H, W]
-                            else:
-                                # Assuming teacher outputs list of dicts
-                                pred_logits = outputs[0]['sem_seg'] # Shape [C, H, W]
+                            # Safely extract prediction logits from model outputs
+                            try:
+                                # Try different possible output structures
+                                if isinstance(outputs, list) and len(outputs) > 0:
+                                    output_dict = outputs[0]
+                                    
+                                    # Check for various possible keys for segmentation masks
+                                    if 'sem_seg' in output_dict:
+                                        pred_logits = output_dict['sem_seg']
+                                    elif 'pred_masks' in output_dict:
+                                        pred_logits = output_dict['pred_masks']
+                                    elif 'pred_logits' in output_dict:
+                                        pred_logits = output_dict['pred_logits']
+                                    elif 'grounding_mask' in output_dict:
+                                        # Use grounding_mask if available (sigmoid activation needed)
+                                        pred_logits = output_dict['grounding_mask'].sigmoid()
+                                        # If it's a binary mask, we need to convert it to a format compatible with argmax
+                                        if pred_logits.shape[0] == 1:  # Binary mask case
+                                            # Create a 2-channel tensor: [background, foreground]
+                                            bg_channel = 1.0 - pred_logits  # Background is inverse of foreground
+                                            pred_logits = torch.cat([bg_channel, pred_logits], dim=0)
+                                    else:
+                                        # Log available keys and skip this batch
+                                        logger.error(f"Could not find semantic segmentation outputs. Available keys: {list(output_dict.keys())}")
+                                        continue
+                                else:
+                                    logger.error(f"Unexpected output format: {type(outputs)}")
+                                    continue
+                            except Exception as e:
+                                logger.error(f"Error extracting prediction logits: {str(e)}")
+                                continue
 
                             pred_mask = torch.argmax(pred_logits, dim=0).cpu().numpy().astype(np.uint8)
                             # --- FIX: Access ground truth mask correctly --- 

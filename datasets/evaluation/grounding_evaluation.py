@@ -18,6 +18,8 @@ import numpy as np
 import os
 
 import copy
+import torch.nn.functional as F
+from modeling.language.loss import vl_similarity
 
 class GroundingEvaluator(DatasetEvaluator):
     """
@@ -53,6 +55,11 @@ class GroundingEvaluator(DatasetEvaluator):
 
     @staticmethod
     def computeIoU(pred_seg, gd_seg):
+        # Ensure both tensors are on the same device
+        if pred_seg.device != gd_seg.device:
+            # Move the second tensor to the device of the first
+            gd_seg = gd_seg.to(pred_seg.device)
+        
         I = (pred_seg & gd_seg)
         U = (pred_seg | gd_seg)
         return I, U
@@ -88,7 +95,12 @@ class GroundingEvaluator(DatasetEvaluator):
 
     def process(self, inputs, outputs):
         for input, output in zip(inputs, outputs):
+            # Print output keys for debugging
+            self._logger.info(f"DEBUG: Output keys: {list(output.keys())}")
+
             pred = output['grounding_mask'].sigmoid() > 0.5
+            device = pred.device # Get device from prediction tensor
+
             # # save pixel probability
             # prob = output['grounding_mask'].sigmoid().cpu().numpy()[0] * 255
             # pred_file = input['file_name'].split('.')[0].replace('test/', 'test_pred/') + '_' + input['groundings']['texts'][0].replace(' ', '+') + '.png'
@@ -97,7 +109,7 @@ class GroundingEvaluator(DatasetEvaluator):
             # plt.imsave(pred_file, 
             #            prob.astype(np.uint8), cmap='gray')
 
-            gt = input['groundings']['masks'].bool()
+            gt = input['groundings']['masks'].bool().to(device) # Move gt to the same device as pred
             bsi = len(pred)
             I, U = self.computeIoU(pred, gt)
             self.cum_I += I.sum().cpu()

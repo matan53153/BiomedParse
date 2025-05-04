@@ -42,15 +42,17 @@ echo "Node: $(hostname)"
 mpirun -n 1 --oversubscribe python entry.py evaluate \
     --conf_files configs/biomed_seg_lang_v1.yaml \
     --overrides \
+    RESUME True \
+    WEIGHT True \
     MODEL.DECODER.HIDDEN_DIM 512 \
     MODEL.ENCODER.CONVS_DIM 512 \
     MODEL.ENCODER.MASK_DIM 512 \
     TEST.BATCH_SIZE_TOTAL 4 \
     FP16 True \
     WEIGHT True \
+    STANDARD_TEXT_FOR_EVAL False \
     RESUME_FROM pretrained/biomedparse_v1.pt \
     EVAL_AT_START True \
-    SAVE_CHECKPOINT False \
     SAVE_DIR './output/teacher_lung_vis_eval' # Separate output dir
 
 echo "Evaluation for visualization finished."
