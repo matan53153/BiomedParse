@@ -126,3 +126,5 @@ biomedparse_datasets/*
 clip-vit-base-patch32-tokenizer/*
 pretrained_assets/*
 pretrained
+
+segmentation_results
