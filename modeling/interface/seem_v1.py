@@ -21,7 +21,7 @@ from .prototype.attention_data_struct_seemv1 import AttentionDataStruct
 from ..utils import rand_sample, prepare_features, configurable
 from ..modules import PositionEmbeddingSine
 from ..modules.point_features import point_sample
-
+from omegaconf import OmegaConf
 
 class SEEMDecoder(nn.Module):
 
@@ -156,7 +156,20 @@ class SEEMDecoder(nn.Module):
             self.pn_indicator = nn.Embedding(2, hidden_dim)
 
         # build AttentionDataStruct
-        attn_arch['NUM_LAYERS'] = self.num_layers
+        # Workaround for ConfigKeyError: Handle both OmegaConf and dict types
+        if hasattr(attn_arch, '_is_config'):
+            # It's an OmegaConf container
+            try:
+                OmegaConf.set_struct(attn_arch, False)
+                attn_arch['NUM_LAYERS'] = self.num_layers
+                OmegaConf.set_struct(attn_arch, True)
+            except Exception as e:
+                print(f"Warning: Error setting NUM_LAYERS in OmegaConf: {e}")
+                # Fallback: try direct assignment
+                attn_arch['NUM_LAYERS'] = self.num_layers
+        else:
+            # It's a regular dictionary
+            attn_arch['NUM_LAYERS'] = self.num_layers
         self.attention_data = AttentionDataStruct(attn_arch, task_switch)
         self.sample_size = attn_arch['QUERY_NUMBER']
 

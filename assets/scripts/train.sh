@@ -37,5 +37,6 @@ CUDA_VISIBLE_DEVICES=0 mpirun -n 1 python entry.py train \
             MODEL.DECODER.SPATIAL.MAX_ITER 0 \
             ATTENTION_ARCH.QUERY_NUMBER 3 \
             STROKE_SAMPLER.MAX_CANDIDATE 10 \
-            WEIGHT True \
-            RESUME_FROM pretrained/biomedparse_v1.pt
+            RESUME True \
+            RESUME_FROM output/biomed_seg_lang_v1.yaml_conf~/run_34/00000585 \
+            # RESUME_FROM pretrained/biomedparse_v1.pt

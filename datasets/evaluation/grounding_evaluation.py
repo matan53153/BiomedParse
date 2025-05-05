@@ -27,11 +27,13 @@ class GroundingEvaluator(DatasetEvaluator):
     def __init__(
         self,
         dataset_name,
+        output_dir,
         compute_box=False,
         distributed=True,
     ):
         self._logger = logging.getLogger(__name__)
         self._dataset_name = dataset_name
+        self._output_dir = output_dir
         self._distributed = distributed
         self._cpu_device = torch.device("cpu")
         self._compute_box = compute_box
@@ -215,17 +217,22 @@ class GroundingEvaluator(DatasetEvaluator):
         import os
         from datetime import datetime
         
-        # Create results directory if it doesn't exist
-        results_dir = os.path.join(os.getcwd(), 'evaluation_results')
-        os.makedirs(results_dir, exist_ok=True)
+        # Extract model/run name from the output_dir path
+        model_run_name = os.path.basename(self._output_dir.rstrip('/\\')) 
         
-        # Create a timestamped filename
+        # Create results directory structure: base_results_dir/model_name/
+        base_results_dir = os.path.join(os.getcwd(), 'evaluation_results') 
+        model_results_dir = os.path.join(base_results_dir, model_run_name)
+        os.makedirs(model_results_dir, exist_ok=True) 
+
+        # Create a timestamped filename within the model-specific folder
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        results_file = os.path.join(results_dir, f'{self._dataset_name}_eval_{timestamp}.json')
+        results_file = os.path.join(model_results_dir, f'{self._dataset_name}_eval_{timestamp}.json')
         
         # Save results and instance-level data
         with open(results_file, 'w') as f:
             json.dump({
+                'model_run': model_run_name, 
                 'dataset': self._dataset_name,
                 'metrics': results,
                 'instance_results': self.instance_results

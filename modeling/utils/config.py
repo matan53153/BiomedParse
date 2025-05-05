@@ -99,9 +99,11 @@ def _called_with_cfg(*args, **kwargs):
     """
     from omegaconf import DictConfig
 
-    if len(args) and isinstance(args[0], (dict)):
+    # Check if first positional arg is a dict OR DictConfig
+    if len(args) and isinstance(args[0], (dict, DictConfig)):
         return True
-    if isinstance(kwargs.pop("cfg", None), (dict)):
+    # Check if 'cfg' keyword arg is a dict OR DictConfig
+    if isinstance(kwargs.pop("cfg", None), (dict, DictConfig)):
         return True
     # `from_config`'s first argument is forced to be "cfg".
     # So the above check covers all cases.

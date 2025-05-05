@@ -4,6 +4,7 @@ from .davit import *
 from .vit import *
 from .backbone import *
 from .build import *
+from .resnet import *
 
 
 def build_backbone(config, **kwargs):

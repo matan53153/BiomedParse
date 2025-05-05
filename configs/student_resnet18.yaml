@@ -20,7 +20,7 @@ SAVE_CHECKPOINT: True
 
 # Logging and Debug
 WANDB: False
-LOG_EVERY: 100
+LOG_EVERY: 20
 FIND_UNUSED_PARAMETERS: false
 
 # Speed up training
@@ -59,28 +59,12 @@ MODEL:
     LAYERS: 12 # 6
     AUTOGRESSIVE: True
   BACKBONE:
-    NAME: focal    # focal_dw    # focal
-    PRETRAINED: ''
-    LOAD_PRETRAINED: false
-    FOCAL:
-      PRETRAIN_IMG_SIZE: 224
-      PATCH_SIZE: 4
-      EMBED_DIM: 192    # 96    # 192
-      DEPTHS: [2, 2, 18, 2]    # [2, 2, 6, 2]    # [2, 2, 18, 2]
-      FOCAL_LEVELS: [4, 4, 4, 4]    # [3, 3, 3, 3]    # [4, 4, 4, 4]
-      FOCAL_WINDOWS: [3, 3, 3, 3]
-      DROP_PATH_RATE: 0.3
-      MLP_RATIO: 4.0
-      DROP_RATE: 0.0
-      PATCH_NORM: True
-      USE_CONV_EMBED: True
-      SCALING_MODULATOR: True
-      USE_CHECKPOINT: False
-      USE_POSTLN: true
-      USE_POSTLN_IN_MODULATION: false
-      USE_LAYERSCALE: True
+    NAME: resnet
+    RESNETS:
+      DEPTH: 18
       OUT_FEATURES: ["res2", "res3", "res4", "res5"]
-      OUT_INDICES: [0, 1, 2, 3]
+      NORM: "FrozenBN"
+      STEM_OUT_CHANNELS: 64
   ENCODER:
     NAME: transformer_encoder_fpn
     IGNORE_VALUE: 255
@@ -94,6 +78,7 @@ MODEL:
     DEFORMABLE_TRANSFORMER_ENCODER_IN_FEATURES: ["res3", "res4", "res5"]
     COMMON_STRIDE: 4
     TRANSFORMER_ENC_LAYERS: 6
+    SIZE_DIVISIBILITY: 32
   DECODER:
     NAME: seem_v1
     TRANSFORMER_IN_FEATURE: "multi_scale_pixel_decoder"
@@ -197,7 +182,6 @@ STROKE_SAMPLER:
 
 # Multi-modal Architecture, order matters
 ATTENTION_ARCH:
-  NUM_LAYERS: 10
   VARIABLE:
     queries: ['object', 'grounding', 'spatial']
     tokens: ['grounding', 'spatial']
@@ -233,14 +217,30 @@ ATTENTION_ARCH:
 DATASETS:
   TRAIN: [
   # 'biomed_BiomedParseData-Demo_demo'    # Add your registered training datasets here
-  'biomed_UWaterlooSkinCancer_train'
+  'biomed_UWaterlooSkinCancer_train',
+  # 'biomed_BreastUS_train',
+  # 'biomed_CXR_Masks_and_Labels_train',
+  # 'biomed_GlaS_train'
+  # 'biomed_COVID-19_CT_train',
+  # 'biomed_amos_22_CT_train',
+  # 'biomed_BreastUS_train',
+  # 'biomed_PanNuke_train',
+  # 'biomed_kits23_train'
   ]
 
 
 
   TEST:  [
   # 'biomed_BiomedParseData-Demo_demo',
-  'biomed_UWaterlooSkinCancer_test'
+  'biomed_UWaterlooSkinCancer_test',
+  # 'biomed_BreastUS_test',
+  # 'biomed_CXR_Masks_and_Labels_test',
+  # 'biomed_GlaS_test',
+  # 'biomed_COVID-19_CT_test',
+  # 'biomed_amos_22_CT_test',
+  # 'biomed_BreastUS_test',
+  # 'biomed_PanNuke_test',
+  # 'biomed_kits23_test'
   ]
   
   CLASS_CONCAT: false
@@ -330,3 +330,11 @@ SOLVER:
     CLIP_VALUE: 5.0 # 0.01
     NORM_TYPE: 2.0
   MAX_NUM_EPOCHS: 50
+
+# Knowledge Distillation Settings
+KD:
+  ENABLED: True # Set to False to disable KD
+  TEACHER_CONFIG_PATH: "configs/biomed_seg_lang_v1.yaml"
+  TEACHER_WEIGHTS_PATH: "pretrained/biomedparse_v1.pt" # Path relative to base_path or absolute
+  ALPHA: 0.5           # Weight balance: (1-ALPHA)*TaskLoss + ALPHA*KDLoss
+  TEMPERATURE: 2.0     # Softmax temperature for KD loss calculation

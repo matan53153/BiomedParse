@@ -27,6 +27,7 @@ from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 from mpi4py import MPI
 from infinibatch import iterators
+from torch.cuda.amp import autocast, GradScaler
 
 from .distributed_trainer import DistributedTrainer
 from .utils_trainer import UtilsTrainer
@@ -82,7 +83,6 @@ class DefaultTrainer(UtilsTrainer, DistributedTrainer):
     def _eval_on_set(self, save_folder):
         logger.info(f"Evaluation start ...")
         if self.opt['FP16']:
-            from torch.cuda.amp import autocast
             with autocast():
                 results = self.pipeline.evaluate_model(self, save_folder)
         else:        
@@ -95,7 +95,6 @@ class DefaultTrainer(UtilsTrainer, DistributedTrainer):
 
         def forward(func, trainer, batch):
             if self.opt['FP16']:
-                from torch.cuda.amp import autocast
                 with autocast():
                     loss = func(trainer, batch)
             else:
@@ -141,21 +140,57 @@ class DefaultTrainer(UtilsTrainer, DistributedTrainer):
             assert len(self.grad_acc_batches) == self.grad_acc_steps
 
             total_batch_sample = 0
+            # Zero gradients before the accumulation loop
+            self.optimizers['default'].zero_grad()
+
             for batch_index, batch in enumerate(self.grad_acc_batches):
+                # Forward pass within autocast context if FP16
+                with autocast(enabled=self.opt['FP16']):
+                    loss_info = self.pipeline.forward_step(self, batch)
+                    
+                    # Calculate total loss by summing all tensor values in the dict
+                    total_loss = sum(v for v in loss_info.values() if isinstance(v, torch.Tensor) and v.requires_grad)
 
-                loss_info, sample_size_info, extra_info = \
-                    self.pipeline.forward_step(self,
-                                            batch,
-                                            self.grad_acc_batches,
-                                            batch_index,
-                                            is_distributed=(self.opt['world_size'] > 1))
+                    # Check if total_loss is valid before proceeding
+                    if not isinstance(total_loss, torch.Tensor):
+                        logger.error(f"Could not compute a valid total loss from loss_info: {loss_info}. Check model's forward pass.")
+                        # Handle error appropriately, maybe raise or skip step
+                        raise ValueError("Invalid loss calculated.")
 
-                self.train_loss.update_iter(loss_info)
+                    # Normalize loss for gradient accumulation
+                    loss = total_loss / self.grad_acc_steps 
+
+                # Scale loss and call backward
+                if self.opt['FP16']:
+                    self.grad_scaler.scale(loss).backward()
+                else:
+                    loss.backward()
+                
+                # Corrected batch size calculation: batch is typically a list of dicts
+                if isinstance(batch, list):
+                    batch_size = len(batch)
+                else:
+                    # Fallback or error handling if batch format is unexpected
+                    logger.warning(f"Unexpected batch type: {type(batch)}. Attempting default batch size 1.")
+                    batch_size = 1 # Default or raise error
+
+                sample_size_info = {'num_samples': batch_size}
+                extra_info = {} # No extra info returned by this pipeline
+
+                # Log loss for the micro-batch (detach before logging)
+                log_loss_info = {k: v.item() if isinstance(v, torch.Tensor) else v for k, v in loss_info.items()}
+                self.train_loss.update_iter(log_loss_info)
                 total_batch_sample += sample_size_info['num_samples']
 
+            # --- After accumulating gradients for all micro-batches ---
+            
+            # Unscale gradients and step optimizer
             if self.opt['FP16']:
-                # Update GradScaler after an effective batch
+                self.grad_scaler.step(self.optimizers['default'])
+                # Update GradScaler only AFTER the optimizer step
                 self.grad_scaler.update()
+            else:
+                self.optimizers['default'].step()
 
             # update losses and item counts of an effective batch to the AverageMeters
             if self.opt['world_size'] > 1:
