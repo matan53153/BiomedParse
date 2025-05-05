@@ -224,21 +224,20 @@ def build_detection_test_loader(
     to produce the exact set of all samples.
 
     Args:
-        dataset: a list of dataset dicts,
+        dataset (list or torch.utils.data.Dataset): a list of dataset dicts,
             or a pytorch dataset (either map-style or iterable). They can be obtained
             by using :func:`DatasetCatalog.get` or :func:`get_detection_dataset_dicts`.
-        mapper: a callable which takes a sample (dict) from dataset
-           and returns the format to be consumed by the model.
-           When using cfg, the default choice is ``DatasetMapper(cfg, is_train=False)``.
-        sampler: a sampler that produces
-            indices to be applied on ``dataset``. Default to :class:`InferenceSampler`,
-            which splits the dataset across all workers. Sampler must be None
-            if `dataset` is iterable.
-        batch_size: the batch size of the data loader to be created.
-            Default to 1 image per worker since this is the standard when reporting
-            inference time in papers.
-        num_workers: number of parallel data loading workers
-        collate_fn: same as the argument of `torch.utils.data.DataLoader`.
+        mapper (callable): a callable which takes a sample (dict) from dataset and
+            returns the format to be consumed by the model.
+            When using cfg, the default choice is ``DatasetMapper(cfg, is_train=False)``.
+        sampler (torch.utils.data.sampler.Sampler or None): a sampler that
+            produces indices to be applied on ``dataset``.
+            Default to :class:`InferenceSampler`, which splits the dataset across all workers.
+            Sampler must be None if `dataset` is iterable.
+        batch_size (int): total batch size across all workers. Batching
+            simply puts data into a list.
+        num_workers (int): number of parallel data loading workers
+        collate_fn (callable): same as the argument of `torch.utils.data.DataLoader`.
             Defaults to do no collation and return a list of data.
 
     Returns:
@@ -544,21 +543,21 @@ def build_evaluator(cfg, dataset_name, output_folder=None):
         is_student_model = True
         logging.info(f"Student model detected for dataset {dataset_name}, using simplified evaluation")
         # For student models, we only do semantic segmentation evaluation
-        evaluator_list.append(SemSegEvaluator(dataset_name, distributed=True, output_dir=output_folder))
+        evaluator_list.append(SemSegEvaluator(cfg, dataset_name, distributed=True, output_dir=output_folder))
         if len(evaluator_list) == 1:
             return evaluator_list[0]
         return DatasetEvaluators(evaluator_list)
     
     # semantic segmentation
     if evaluator_type in ["sem_seg", "ade20k_panoptic_seg", "coco_panoptic_seg"]:
-        evaluator_list.append(SemSegEvaluator(dataset_name, distributed=True, output_dir=output_folder))
+        evaluator_list.append(SemSegEvaluator(cfg, dataset_name, distributed=True, output_dir=output_folder))
     
     # Check if MODEL.DECODER.TEST exists
     if 'MODEL' not in cfg or 'DECODER' not in cfg['MODEL'] or 'TEST' not in cfg['MODEL']['DECODER']:
         logging.warning(f"MODEL.DECODER.TEST not found in config for dataset {dataset_name}. Using default evaluation settings.")
         # Return a basic evaluator for semantic segmentation
         if 'biomed' in dataset_name:
-            evaluator_list.append(SemSegEvaluator(dataset_name, distributed=True, output_dir=output_folder))
+            evaluator_list.append(SemSegEvaluator(cfg, dataset_name, distributed=True, output_dir=output_folder))
             if len(evaluator_list) == 1:
                 return evaluator_list[0]
             return DatasetEvaluators(evaluator_list)
@@ -591,12 +590,12 @@ def build_evaluator(cfg, dataset_name, output_folder=None):
     if (evaluator_type == "coco_panoptic_seg" and cfg_model_decoder_test["INSTANCE_ON"]) or evaluator_type == "object365_od":
         evaluator_list.append(COCOEvaluator(dataset_name, output_dir=output_folder))
     if (evaluator_type == "coco_panoptic_seg" and cfg_model_decoder_test["SEMANTIC_ON"]) or evaluator_type == "coco_sem_seg":
-        evaluator_list.append(SemSegEvaluator(dataset_name, distributed=True, output_dir=output_folder))
+        evaluator_list.append(SemSegEvaluator(cfg, dataset_name, distributed=True, output_dir=output_folder))
     # Mapillary Vistas
     if evaluator_type == "mapillary_vistas_panoptic_seg" and cfg_model_decoder_test["INSTANCE_ON"]:
         evaluator_list.append(InstanceSegEvaluator(dataset_name, output_dir=output_folder))
     if evaluator_type == "mapillary_vistas_panoptic_seg" and cfg_model_decoder_test["SEMANTIC_ON"]:
-        evaluator_list.append(SemSegEvaluator(dataset_name, distributed=True, output_dir=output_folder))
+        evaluator_list.append(SemSegEvaluator(cfg, dataset_name, distributed=True, output_dir=output_folder))
     # Cityscapes
     if evaluator_type == "cityscapes_instance":
         assert (

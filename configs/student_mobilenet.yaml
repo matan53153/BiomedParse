@@ -93,6 +93,12 @@ MODEL:
     LOAD_PRETRAINED: null
     FOCAL: null # Null out FocalNet specific settings
 
+  SEM_SEG_HEAD:
+    NAME: "DeepLabHead"
+    NUM_CLASSES: 2  # Changed from multi-class to 2 (background + foreground)
+    LOSS_WEIGHT: 1.0
+    IGNORE_VALUE: 255
+
 # Spatial sampler - Keep full structure from original
 STROKE_SAMPLER:
   MAX_CANDIDATE: 1

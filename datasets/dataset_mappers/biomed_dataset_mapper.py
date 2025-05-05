@@ -245,6 +245,9 @@ class BioMedDatasetMapper:
                 else:
                     sem_seg_gt = sem_seg_gt.squeeze() # Squeeze to ensure HxW
 
+                # Convert to binary: 0 for background, 1 for foreground
+                sem_seg_gt = (sem_seg_gt > 0).astype(np.uint8)
+
                 # Ensure the final mask is HxW and store as tensor
                 dataset_dict["sem_seg"] = torch.as_tensor(np.ascontiguousarray(sem_seg_gt))
                 logging.getLogger(__name__).debug(f"Loaded and processed sem_seg from {dataset_dict['sem_seg_file_name']}, shape: {dataset_dict['sem_seg'].shape}")

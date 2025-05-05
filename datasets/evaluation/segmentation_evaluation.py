@@ -26,6 +26,7 @@ class SemSegEvaluator(DatasetEvaluator):
 
     def __init__(
         self,
+        cfg,
         dataset_name,
         distributed=True,
         output_dir=None,
@@ -113,9 +114,29 @@ class SemSegEvaluator(DatasetEvaluator):
         self._class_offset = meta.class_offset if hasattr(meta, 'class_offset') else 0
         self._semseg_loader = meta.semseg_loader if hasattr(meta, 'semseg_loader') else 'PIL'
 
+        # Check config for binary mode and override if needed
+        # Access cfg as a dictionary since it's passed as self._opt from XDecoderPipeline
+        is_binary_mode = False
+        if 'MODEL' in cfg and 'SEM_SEG_HEAD' in cfg['MODEL'] and 'NUM_CLASSES' in cfg['MODEL']['SEM_SEG_HEAD']:
+            if cfg['MODEL']['SEM_SEG_HEAD']['NUM_CLASSES'] == 2:
+                is_binary_mode = True
+
+        if is_binary_mode:
+            self._logger.info("Binary segmentation mode detected (NUM_CLASSES=2). Overriding class names and count for reporting.")
+            self._num_classes = 2
+            self._class_names = ["background", "foreground"]
+
+        # num_classes and ignore_label args override everything if provided
         if num_classes is not None:
-            assert self._num_classes == num_classes, f"{self._num_classes} != {num_classes}"
-        self._ignore_label = ignore_label if ignore_label is not None else meta.ignore_label
+             self._num_classes = num_classes
+             # Potentially warn if num_classes arg conflicts with binary mode?
+             # Use dict access here too
+             if is_binary_mode and num_classes != 2:
+                 self._logger.warning(f"num_classes argument ({num_classes}) conflicts with binary mode (NUM_CLASSES=2 in cfg). Using {num_classes}.")
+        if ignore_label is not None:
+            self._ignore_label = ignore_label
+        else:
+            self._ignore_label = meta.ignore_label if hasattr(meta, 'ignore_label') else None
 
         if self._output_dir:
             PathManager.mkdirs(self._output_dir)

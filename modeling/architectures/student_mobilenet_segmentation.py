@@ -8,6 +8,7 @@ import logging
 # Import necessary components for registration
 from .build import register_model
 from ..BaseModel import BaseModel 
+from ..criterion.pixel_criterion import PixelCriterion # Import PixelCriterion
 
 logger = logging.getLogger(__name__)
 
@@ -26,14 +27,33 @@ class StudentMobileNetSegmentation(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.config = config
-        self.num_classes = config['MODEL']['STUDENT']['NUM_CLASSES']
+        
+        # *** Correctly Read NUM_CLASSES from the config dictionary ***
+        try:
+            # Use the path defined in student_mobilenet.yaml
+            self.num_classes = config['MODEL']['SEM_SEG_HEAD']['NUM_CLASSES'] 
+            logger.info(f"Initializing DeepLabHead with num_classes = {self.num_classes} from config.")
+        except KeyError as e:
+            logger.error(f"Could not find NUM_CLASSES in config at MODEL.SEM_SEG_HEAD.NUM_CLASSES. Error: {e}")
+            self.num_classes = 16 # Defaulting to 16, but ideally config should exist
+            logger.warning(f"Defaulting num_classes to {self.num_classes}. Ensure config is correct.")
+
         self.pretrained = config['MODEL']['STUDENT']['PRETRAINED']
         
         self.backbone = MobileNetBackbone(pretrained=self.pretrained)
         backbone_out_channels = 960
         
+        # Create the DeepLabHead with the correct number of classes
         self.head = DeepLabHead(backbone_out_channels, self.num_classes)
+        
         self._init_weights(self.head)
+
+        # Pixel-wise loss criterion - Pass the dictionary config
+        self.pixel_criterion = PixelCriterion(config)
+        
+        # Set device using dictionary access
+        self.device = torch.device(config.get('DEVICE', 'cuda' if torch.cuda.is_available() else 'cpu'))
+        self.to(self.device)
 
     def _init_weights(self, module):
         for m in module.modules():
@@ -48,71 +68,56 @@ class StudentMobileNetSegmentation(nn.Module):
                 nn.init.normal_(m.weight, 0, 0.01)
                 nn.init.constant_(m.bias, 0)
 
-    def forward(self, batch, **kwargs):
-        mode = kwargs.get('mode', 'train') 
-
-        if mode == 'train':
-            # Handle both dict and list batch formats during training
-            if isinstance(batch, list):
-                # Stack images and targets from the list of dicts
-                images = torch.stack([item['image'] for item in batch])
-                # Check if 'sem_seg' exists in items before stacking
-                if all('sem_seg' in item for item in batch):
-                    targets = torch.stack([item['sem_seg'] for item in batch])
-                else:
-                    targets = None 
-                    logger.warning("Some items in the training batch list are missing 'sem_seg'.")
-            elif isinstance(batch, dict):
-                images = batch['image']
-                targets = batch.get('sem_seg', None)
-            else:
-                logger.error(f"Unexpected batch type during training: {type(batch)}")
-                # Depending on desired behavior, raise error or return dummy loss
-                raise TypeError(f"Unexpected batch type during training: {type(batch)}")
-
-            # Ensure input tensor is float32
-            if images.dtype != torch.float32:
-                images = images.to(torch.float32)
-            
-            input_shape = images.shape[-2:]
-            
-            features = self.backbone(images) 
-            head_input = features['out'] 
-            logger.debug(f"Shape input to DeepLabHead: {head_input.shape}") # Log shape
-            x = self.head(head_input) 
-            
-            logits = F.interpolate(x, size=input_shape, mode='bilinear', align_corners=False)
-
-            # Always return logits during training; loss calculation is handled by the criterion
-            return {'sem_seg_logits': logits}
-
-        elif mode in ['evaluate', 'grounding_refcoco']: 
-            if isinstance(batch, list):
-                images = torch.stack([x['image'] for x in batch])
-            elif isinstance(batch, dict):
-                images = batch['image']
-            else:
-                logger.error(f"Unexpected batch type during evaluation: {type(batch)}")
-                return {"error": f"Unexpected batch type: {type(batch)}"} 
-
-            if images.dtype != torch.float32:
-                images = images.to(torch.float32)
-
-            input_shape = images.shape[-2:]
-
-            features = self.backbone(images)
-            head_input = features['out']
-            logger.debug(f"Shape input to DeepLabHead: {head_input.shape}") # Log shape
-            x = self.head(head_input)
-            
-            logits = F.interpolate(x, size=input_shape, mode='bilinear', align_corners=False)
-            
-            result = {'sem_seg_logits': logits}
-            return result
-            
+    def forward(self, batch, is_training=True):
+        """ 
+        Simplified forward pass.
+        Args:
+            batch: Input batch (dict or list of dicts).
+            is_training (bool): Training mode flag.
+        Returns:
+            Dict: Losses if training, or segmentation output if evaluating.
+        """
+        # Handle Detectron2 list-of-dicts format
+        if isinstance(batch, list):
+             # Ensure float conversion happens here
+             images = torch.stack([x["image"].to(self.device) for x in batch]).float()
+             if is_training:
+                 targets = torch.stack([x["sem_seg"].to(self.device, dtype=torch.long) for x in batch])
+             else:
+                 targets = None
+        elif isinstance(batch, dict):
+             # Ensure float conversion happens here too
+             images = batch["image"].to(self.device).float()
+             if is_training:
+                 targets = batch.get("sem_seg")
+                 if targets is not None:
+                     targets = targets.to(self.device, dtype=torch.long)
+             else:
+                 targets = None
         else:
-            logger.error(f"Unsupported mode: {mode}")
-            return {"error": f"Unsupported mode: {mode}"}
+            raise TypeError(f"Unsupported batch type: {type(batch)}")
+
+        features = self.backbone(images) # Now images should be float32
+        # *** Add Debug Print right after backbone ***
+        print(f"DEBUG: Type RIGHT AFTER backbone call: {type(features)}")
+        if isinstance(features, torch.Tensor):
+            print(f"DEBUG: Shape RIGHT AFTER backbone call: {features.shape}")
+
+        # *** Add Debug Print right before head ***
+        print(f"DEBUG: Type RIGHT BEFORE head call: {type(features)}")
+        # *** Try passing features tensor directly to DeepLabHead ***
+        outputs = self.head(features) # Pass the features tensor directly
+
+        if is_training:
+            if targets is None:
+                logger.warning("Targets are None in training mode. Cannot compute loss.")
+                return {'loss_sem_seg_ce': torch.tensor(0.0, device=self.device, requires_grad=True)}
+            # *** Implement loss computation using PixelCriterion ***
+            losses = self.pixel_criterion(outputs, targets)
+            return losses
+        else:
+            # Return raw logits for evaluation, evaluator handles argmax
+            return {"sem_seg": outputs}
 
 if __name__ == '__main__':
     config = {
@@ -120,6 +125,9 @@ if __name__ == '__main__':
             'STUDENT': {
                 'NUM_CLASSES': 16, 
                 'PRETRAINED': True
+            },
+            'SEM_SEG_HEAD': {
+                'NUM_CLASSES': 16
             },
             'IGNORE_LABEL': 255
         }
@@ -136,30 +144,16 @@ if __name__ == '__main__':
     dummy_batch_eval = [{'image': dummy_input, 'height': 512, 'width': 512}]
 
     with torch.no_grad():
-        output_train = model(dummy_batch_train, mode='train')
+        output_train = model(dummy_batch_train, is_training=True)
         print("Train mode output keys:", output_train.keys())
-        if 'sem_seg_logits' in output_train:
-            print("Train logits shape:", output_train['sem_seg_logits'].shape)
+        if 'sem_seg' in output_train:
+            print("Train logits shape:", output_train['sem_seg'].shape)
     
     with torch.no_grad():
-        output_eval = model(dummy_batch_eval, mode='evaluate')
+        output_eval = model(dummy_batch_eval, is_training=False)
         print("\nEvaluate mode output keys:", output_eval.keys())
-        if 'sem_seg_logits' in output_eval:
-            print("Evaluate logits shape:", output_eval['sem_seg_logits'].shape)
-        elif 'error' in output_eval:
-            print("Evaluate mode error:", output_eval['error'])
-
-    with torch.no_grad():
-        output_grounding = model(dummy_batch_eval, mode='grounding_refcoco')
-        print("\nGrounding_refcoco mode output keys:", output_grounding.keys())
-        if 'sem_seg_logits' in output_grounding:
-            print("Grounding logits shape:", output_grounding['sem_seg_logits'].shape)
-        elif 'error' in output_grounding:
-            print("Grounding mode error:", output_grounding['error'])
-
-    with torch.no_grad():
-        output_unsupported = model(dummy_batch_eval, mode='invalid_mode')
-        print("\nUnsupported mode output:", output_unsupported)
+        if 'sem_seg' in output_eval:
+            print("Evaluate logits shape:", output_eval['sem_seg'].shape)
 
 # Factory function for building and registering the model
 @register_model
