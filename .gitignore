@@ -128,3 +128,5 @@ pretrained_assets/*
 pretrained
 
 segmentation_results
+
+pretrained_assets
