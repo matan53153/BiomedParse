@@ -227,6 +227,35 @@ class BioMedDatasetMapper:
         # Therefore it's important to use torch.Tensor.
         dataset_dict["image"] = torch.as_tensor(np.ascontiguousarray(image.transpose(2, 0, 1)))
 
+        # Handle semantic segmentation ground truth
+        if "sem_seg_file_name" in dataset_dict:
+            try:
+                # Load the semantic segmentation mask as grayscale (H, W)
+                sem_seg_gt = utils.read_image(dataset_dict["sem_seg_file_name"], format="L")
+                sem_seg_gt = sem_seg_gt.astype(np.uint8) # Ensure uint8 type
+
+                # Apply the same transformations as the main image
+                # NOTE: Pass 2D mask directly to apply_segmentation
+                sem_seg_gt = transforms.apply_segmentation(sem_seg_gt)
+
+                # Apply rotation if needed (matching image rotation)
+                if rotate_time > 0:
+                    # Ensure rotation is applied correctly, squeeze should handle the channel dim
+                    sem_seg_gt = np.rot90(sem_seg_gt.squeeze(), rotate_time)
+                else:
+                    sem_seg_gt = sem_seg_gt.squeeze() # Squeeze to ensure HxW
+
+                # Ensure the final mask is HxW and store as tensor
+                dataset_dict["sem_seg"] = torch.as_tensor(np.ascontiguousarray(sem_seg_gt))
+                logging.getLogger(__name__).debug(f"Loaded and processed sem_seg from {dataset_dict['sem_seg_file_name']}, shape: {dataset_dict['sem_seg'].shape}")
+
+            except Exception as e:
+                logging.getLogger(__name__).error(f"Error loading or processing sem_seg_file_name {dataset_dict.get('sem_seg_file_name', 'N/A')}: {e}")
+                # Decide how to handle error: skip 'sem_seg', raise error, etc.
+                pass
+        else:
+             # Add a debug log if the key is missing
+             logging.getLogger(__name__).debug(f"sem_seg_file_name not found in dataset_dict for {dataset_dict.get('file_name', 'N/A')}")
 
         grounding_anno = dataset_dict['grounding_info']
         if len(grounding_anno) == 0:

@@ -1,0 +1,232 @@
+# --------------------------------------------------------
+# X-Decoder -- Generalized Decoding for Pixel, Image, and Language
+# Copyright (c) 2022 Microsoft
+# Licensed under The MIT License [see LICENSE for details]
+# Written by Xueyan Zou (xueyan@cs.wisc.edu)
+# --------------------------------------------------------
+# THIS FILE IS BASED ON biomed_seg_lang_v1.yaml WITH STUDENT OVERRIDES APPLIED
+
+# Define Test/Trainer/Saving
+PIPELINE: XDecoderPipeline
+TRAINER: xdecoder
+SAVE_DIR: './output'
+base_path: "./"
+
+# Resume Logistic
+RESUME: false
+WEIGHT: false
+RESUME_FROM: ''
+EVAL_AT_START: False
+SAVE_CHECKPOINT: True
+
+# Logging and Debug
+WANDB: False
+LOG_EVERY: 100
+FIND_UNUSED_PARAMETERS: false # Set to True if debugging unused params
+
+# Speed up training
+FP16: true # Enable FP16 Mixed Precision Training
+PORT: '36873'
+
+# misc
+LOADER:
+  JOINT: True
+  KEY_DATASET: ""
+  SAMPLE_PROB: "prop"    # sampling probability proportional to data size. Use "equal" for each bach from all datasets
+  MIXING_LEVEL: 1    # num of different datasets for batch mixing on each GPU
+
+RANDOM_SEED: 2024 # Explicitly set for student
+
+STANDARD_TEXT_FOR_EVAL: False
+
+##################
+# Task settings
+##################
+VERBOSE: true
+
+MODEL:
+  # --- Student Overrides ---
+  NAME: student_mobilenet_segmentation # STUDENT MODEL NAME
+  STUDENT:                             # STUDENT SPECIFIC SECTION
+    BACKBONE_NAME: mobilenet_v3_large   # Use MobileNetV3 Large backbone
+    PRETRAINED: True
+    NUM_CLASSES: 16 # Matches original ENCODER.NUM_CLASSES
+  # --- End Student Overrides ---
+
+  MASK_ON: false # Keep from original
+  KEYPOINT_ON: false # Keep from original
+  LOAD_PROPOSALS: false # Keep from original
+  DIM_PROJ: 512 # Keep from original
+
+  # Required for dataset mapper
+  ENCODER:
+    BINARY_CLASSES: False
+    NUM_CLASSES: 16
+    IGNORE_VALUE: 255
+
+  # Required for dataset mapper
+  DECODER:
+    RETRIEVAL:
+      ENABLED: False
+    CAPTION:
+      SIM_THRES: 0.95
+    GROUNDING:
+      ENABLED: False
+      MAX_LEN: 10
+    LVIS:
+      ENABLED: False
+      THRES: 0.7
+
+  TEXT: # Null out TEXT section for student
+    ARCH: null
+    NAME: null
+    TOKENIZER: null
+    CONTEXT_LENGTH: null
+    WIDTH: null
+    HEADS: null
+    LAYERS: null
+    AUTOGRESSIVE: null
+
+  BACKBONE: # Null out SEEM backbone section, student backbone defined in MODEL.STUDENT
+    NAME: null
+    PRETRAINED: null
+    LOAD_PRETRAINED: null
+    FOCAL: null # Null out FocalNet specific settings
+
+# Spatial sampler - Keep full structure from original
+STROKE_SAMPLER:
+  MAX_CANDIDATE: 1
+  CANDIDATE_PROBS: [0.25, 0.25, 0.25, 0.25] # for training only
+  CANDIDATE_NAMES: ["Point", "Polygon", "Scribble", "Circle"]
+  DILATION: 3
+  CIRCLE:
+    NUM_STROKES: 5
+    STROKE_PRESET: ['object_like', 'object_like_middle', 'object_like_small']
+    STROKE_PROB: [0.33, 0.33, 0.33]
+  SCRIBBLE:
+    NUM_STROKES: 5
+    STROKE_PRESET: ['rand_curve', 'rand_curve_small']
+    STROKE_PROB: [0.5, 0.5]
+  POINT:
+    NUM_POINTS: 20
+  POLYGON:
+    MAX_POINTS: 9
+  EVAL:
+    MODE: 'best' # best/random/best_random
+    NEGATIVE: False
+    MAX_ITER: 1
+    IOU_ITER: 1
+    GROUNDING: True # Keep original? Doesn't align with DECODER.GROUNDING.ENABLED=False
+
+# Multi-modal Architecture - Null out for student
+ATTENTION_ARCH: null
+
+DATASETS: # Use only registered datasets
+  TRAIN: [
+    'biomed_UWaterlooSkinCancer_train' # Only registered dataset
+  ]
+  TEST:  [
+    'biomed_UWaterlooSkinCancer_test'  # Only registered dataset
+  ]
+  CLASS_CONCAT: false
+  SIZE_DIVISIBILITY: 32
+  PROPOSAL_FILES_TRAIN: []
+
+INPUT: # Use ImageNet defaults as per previous student config? Or BioMed specific? Using ImageNet for now.
+  PIXEL_MEAN: [123.675, 116.280, 103.530]
+  PIXEL_STD: [58.395, 57.120, 57.375]
+
+TRAIN: # Keep from original/student config
+  ASPECT_RATIO_GROUPING: true
+  BATCH_SIZE_TOTAL: 4 # This is now effectively ignored by dataloader
+  BATCH_SIZE_PER_GPU: 4 # Base value, overridden by Slurm script
+  SHUFFLE: true
+
+TEST: # Keep from original/student config, ensure IOU_TYPE is segm only
+  DETECTIONS_PER_IMAGE: 100
+  NAME: coco_eval # Or a different evaluator if needed
+  IOU_TYPE: ['segm'] # Student only does segmentation
+  USE_MULTISCALE: false
+  BATCH_SIZE_TOTAL: 4
+  MODEL_FILE: ''
+  AUG:
+    ENABLED: False
+
+DATALOADER: # Keep from original/student config
+  FILTER_EMPTY_ANNOTATIONS: False
+  NUM_WORKERS: 8
+  LOAD_PROPOSALS: False
+  SAMPLER_TRAIN: "TrainingSampler"
+  ASPECT_RATIO_GROUPING: True
+
+BioMed: # Keep from original/student config
+  INPUT:
+    # Use top-level INPUT for mean/std
+    # PIXEL_MEAN: [64.284, 59.293, 59.962] # BioMed specific mean/std
+    # PIXEL_STD: [62.484, 60.865, 59.835]  # BioMed specific mean/std
+    DATASET_MAPPER_NAME: "biomed_interactive" # Keep original, seems required
+    MIN_SIZE_TRAIN: 900
+    MAX_SIZE_TRAIN: 1100
+    MIN_SIZE_TRAIN_SAMPLING: 'choice'
+    MIN_SIZE_TEST: 900
+    MAX_SIZE_TEST: 1100
+    IMAGE_SIZE: 1024
+    MIN_SCALE: 0.9
+    MAX_SCALE: 1.1
+    IGNORE_VALUE: 255 # Must match ENCODER.IGNORE_VALUE
+    COLOR_AUG_SSD: False
+    SIZE_DIVISIBILITY: 32
+    RANDOM_FLIP: "none"
+    RANDOM_ROTATE: False
+    MASK_FORMAT: "polygon" # Keep original
+    MIN_AREA: 30
+    FORMAT: "RGB"
+    SPATIAL: False # Override: Student doesn't use spatial queries
+    CROP:
+      ENABLED: True
+  DATASET:
+    DATASET: "biomed"
+
+# Detectron2 training config for optimizer and lr scheduler
+SOLVER: # Apply student overrides to the original base structure
+  BASE_LR: 0.00005 # Student specific LR
+  STEPS: [0.88889, 0.96296] # Keep original stepping
+  MAX_ITER: 1 # Calculated later based on epochs
+  GAMMA: 0.1
+  WARMUP_FACTOR: 1.0
+  WARMUP_ITERS: 10
+  WARMUP_METHOD: "linear"
+  WEIGHT_DECAY: 0.05
+  OPTIMIZER: "ADAMW"
+  LR_SCHEDULER_NAME: "WarmupMultiStepLR"
+  LR_MULTIPLIER: # Student overrides
+     backbone: 0.1 # Fine-tune backbone slower
+     lang_encoder: null # Not used
+     pixel_decoder: null # Not used? Or refers to head?
+     head: 1.0 # Assuming 'head' refers to the student's final layers
+  FIX_PARAM: # Student overrides
+     backbone: False # Train the student backbone
+     lang_encoder: null # Not used
+     pixel_decoder: null # Not used? Or refers to head?
+     head: False # Train the student head layers
+  WEIGHT_DECAY_NORM: 0.0
+  WEIGHT_DECAY_EMBED: 0.0
+  CLIP_GRADIENTS:
+    ENABLED: True
+    CLIP_TYPE: "full_model"
+    CLIP_VALUE: 5.0 # Keep original
+    NORM_TYPE: 2.0
+  MAX_NUM_EPOCHS: 50 # Student override (keep previous value)
+
+# EVAL settings
+EVAL: # Use student settings
+  ENABLED: True
+  SAVE_LOGITS: False
+  LOGITS_SAVE_DIR: None
+
+# Add VISUAL and AUDIO sections to prevent KeyErrors
+VISUAL:
+  ENABLED: False
+
+AUDIO:
+  ENABLED: False

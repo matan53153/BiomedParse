@@ -7,6 +7,7 @@
 import json
 import os
 import collections
+import logging
 
 from detectron2.data import DatasetCatalog, MetadataCatalog
 from detectron2.data.datasets import load_sem_seg
@@ -59,10 +60,12 @@ def load_biomed_json(image_root, annot_json, metadata):
         `Using Custom Datasets </tutorials/datasets.html>`_ )
     """
 
+    import logging
+
     with PathManager.open(annot_json) as f:
         json_info = json.load(f)
-        
-    # build dictionary for grounding
+
+    # build dictionary for grounding - used later
     grd_dict = collections.defaultdict(list)
     for grd_ann in json_info['annotations']:
         image_id = int(grd_ann["image_id"])
@@ -70,23 +73,69 @@ def load_biomed_json(image_root, annot_json, metadata):
 
     mask_root = image_root + '_mask'
     ret = []
+    image_id_to_info = {}
+
+    # First pass: Populate image_id_to_info with basic image data
     for image in json_info["images"]:
         image_id = int(image["id"])
-        image_file = os.path.join(image_root, image['file_name'])
-        grounding_anno = grd_dict[image_id]
-        for ann in grounding_anno:
-            if 'mask_file' not in ann:
-                ann['mask_file'] = image['file_name']
-            ann['mask_file'] = os.path.join(mask_root, ann['mask_file'])
-            ret.append(
-                {
-                    "file_name": image_file,
-                    "image_id": image_id,
-                    "grounding_info": [ann],
-                }
-            )
+        image_id_to_info[image_id] = {
+            "file_name": os.path.join(image_root, image['file_name']),
+            "image_id": image_id,
+            "sem_seg_file_name": None, # Initialize as None, will be filled from annotation
+            "grounding_info": []
+        }
+
+    # Second pass: Process annotations to get grounding info AND infer sem_seg_file_name
+    processed_image_ids_for_sem_seg = set() # Keep track of images for which we've set sem_seg path
+
+    for grd_ann in json_info['annotations']:
+        image_id = int(grd_ann["image_id"])
+        if image_id in image_id_to_info:
+            # --- WORKAROUND START ---
+            # If we haven't assigned a sem_seg_file_name for this image yet,
+            # use the mask_file from this (first encountered) annotation.
+            if image_id not in processed_image_ids_for_sem_seg:
+                if "mask_file" in grd_ann and grd_ann["mask_file"] is not None:
+                    # Construct the full path using the mask filename from the annotation
+                    # IMPORTANT: Assuming the mask_file in annotation is just the filename, not a path
+                    sem_seg_path = os.path.join(mask_root, grd_ann["mask_file"])
+                    image_id_to_info[image_id]["sem_seg_file_name"] = sem_seg_path
+                    processed_image_ids_for_sem_seg.add(image_id)
+                    # Add a log warning about this workaround (log only once per dataset load)
+                    if len(processed_image_ids_for_sem_seg) == 1:
+                        logging.warning(f"WORKAROUND: Inferring 'sem_seg_file_name' from first annotation's 'mask_file' for image_id {image_id} due to missing key in JSON 'images' list. Assumed path: {sem_seg_path}")
+                else:
+                    # Log error if the first annotation also lacks mask_file
+                    logging.error(f"Cannot infer 'sem_seg_file_name' for image_id {image_id}: 'mask_file' missing or None in first annotation.")
+            # --- WORKAROUND END ---
+
+            # Process grounding mask path (ensure it's relative to mask_root)
+            # Note: This might overwrite grd_ann['mask_file'] if it was already a full path, assumes it's filename only
+            if 'mask_file' in grd_ann and grd_ann['mask_file'] is not None:
+                 current_mask_filename = os.path.basename(grd_ann['mask_file']) # Extract filename just in case
+                 grd_ann['mask_file'] = os.path.join(mask_root, current_mask_filename)
+            else:
+                 # Handle missing grounding mask? Set to None or log error.
+                 grd_ann['mask_file'] = None # Example: set to None
+
+            image_id_to_info[image_id]["grounding_info"].append(grd_ann)
+        else:
+            logging.warning(f"Annotation references image_id {image_id} which is not found in image list.")
+
+    # Add check for images that had no annotations at all to infer from
+    for image_id, info in image_id_to_info.items():
+        if info["sem_seg_file_name"] is None:
+             logging.error(f"Failed to find any valid annotation for image_id {image_id} to infer 'sem_seg_file_name'.")
+
+    # Convert the dictionary values to a list
+    ret = list(image_id_to_info.values())
+
     assert len(ret), f"No images found in {image_root}!"
-    assert PathManager.isfile(ret[0]["file_name"]), ret[0]["file_name"]
+    if ret:
+        assert PathManager.isfile(ret[0]["file_name"]), ret[0]["file_name"]
+        # Check if the sem_seg path exists *if* it was successfully read and not None
+        if ret[0]["sem_seg_file_name"] is not None:
+             assert PathManager.isfile(ret[0]["sem_seg_file_name"]), f"Semantic mask file not found: {ret[0]['sem_seg_file_name']}"
     return ret
 
 

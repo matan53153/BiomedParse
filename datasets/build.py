@@ -534,18 +534,43 @@ def build_evaluator(cfg, dataset_name, output_folder=None):
     """
     if output_folder is None:
         output_folder = os.path.join(cfg["SAVE_DIR"], "inference")
+
     evaluator_list = []
     evaluator_type = MetadataCatalog.get(dataset_name).evaluator_type
-
+    
+    # Check if this is a student model
+    is_student_model = False
+    if 'MODEL' in cfg and 'NAME' in cfg['MODEL'] and 'student_mobilenet_segmentation' in cfg['MODEL']['NAME']:
+        is_student_model = True
+        logging.info(f"Student model detected for dataset {dataset_name}, using simplified evaluation")
+        # For student models, we only do semantic segmentation evaluation
+        evaluator_list.append(SemSegEvaluator(dataset_name, distributed=True, output_dir=output_folder))
+        if len(evaluator_list) == 1:
+            return evaluator_list[0]
+        return DatasetEvaluators(evaluator_list)
+    
     # semantic segmentation
-    if evaluator_type in ["sem_seg", "ade20k_panoptic_seg"]:
-        evaluator_list.append(
-            SemSegEvaluator(
-                dataset_name,
-                distributed=True,
-                output_dir=output_folder,
-            )
-        )
+    if evaluator_type in ["sem_seg", "ade20k_panoptic_seg", "coco_panoptic_seg"]:
+        evaluator_list.append(SemSegEvaluator(dataset_name, distributed=True, output_dir=output_folder))
+    
+    # Check if MODEL.DECODER.TEST exists
+    if 'MODEL' not in cfg or 'DECODER' not in cfg['MODEL'] or 'TEST' not in cfg['MODEL']['DECODER']:
+        logging.warning(f"MODEL.DECODER.TEST not found in config for dataset {dataset_name}. Using default evaluation settings.")
+        # Return a basic evaluator for semantic segmentation
+        if 'biomed' in dataset_name:
+            evaluator_list.append(SemSegEvaluator(dataset_name, distributed=True, output_dir=output_folder))
+            if len(evaluator_list) == 1:
+                return evaluator_list[0]
+            return DatasetEvaluators(evaluator_list)
+        # For other datasets, we'll use a default configuration
+        cfg_model_decoder_test = {
+            "SEMANTIC_ON": True,
+            "INSTANCE_ON": False,
+            "PANOPTIC_ON": False
+        }
+    else:
+        cfg_model_decoder_test = cfg["MODEL"]["DECODER"]["TEST"]
+    
     # instance segmentation
     if evaluator_type == "coco":
         evaluator_list.append(COCOEvaluator(dataset_name, output_dir=output_folder))
