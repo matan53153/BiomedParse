@@ -127,3 +127,8 @@ clip-vit-base-patch32-tokenizer/*
 pretrained
 
 segmentation_results
+
+# Large model files that exceed GitHub's file size limit
+pretrained_assets/microsoft__BiomedNLP-BiomedBERT-base-uncased-abstract-fulltext/model.safetensors
+pretrained_assets/openai__clip-vit-base-patch32/model.safetensors
+*.safetensors
