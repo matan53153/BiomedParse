@@ -123,3 +123,5 @@ output
 
 biomedparse_datasets
 segmentation_results
+
+pretrained_assets
